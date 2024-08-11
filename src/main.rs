@@ -16,20 +16,22 @@ impl AiModule for BotCallbacks {
         let frame_minerals = self_.minerals();
         let _frame_gas = self_.gas();
         let my_units = self_.get_units();
-        let idle_workers: Vec<&Unit> = my_units
+        let mut idle_workers = my_units
             .iter()
-            .filter(|u| u.get_type() == UnitType::Zerg_Drone && u.is_idle()).collect();
-        println!("got {} idle workers", idle_workers.len());
-        for w in idle_workers {
-            let patch = w.get_closest_unit(|u| u.get_type().is_mineral_field(), 100);
-            if let Some(patch) = patch {
-                w.gather(&patch).ok();
+            .filter(|u| u.get_type() == UnitType::Zerg_Drone && u.is_idle());
+        let minerals = game.get_all_units().into_iter().filter(|u| {
+            u.get_type().is_mineral_field() && u.is_visible() && !u.is_being_gathered()
+        });
+        for m in minerals {
+            if let Some(worker) = idle_workers.next() {
+                println!("worker {:?} gathering {:?}", &worker, &m);
+                worker.gather(&m).ok();
             }
         }
-        if self_.supply_used() >= self_.supply_total() - 1 && frame_minerals > 100 {
+        if self_.supply_used() >= self_.supply_total() - 1 && frame_minerals >= 100 {
             spawn_maybe(&my_units, UnitType::Zerg_Overlord);
         }
-        if frame_minerals > 50 {
+        if frame_minerals >= 50 {
             spawn_maybe(&my_units, UnitType::Zerg_Drone);
         }
     }
