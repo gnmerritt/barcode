@@ -30,7 +30,7 @@ impl AiModule for BotCallbacks {
             spawn_maybe(&my_units, UnitType::Zerg_Overlord);
         }
         if frame_minerals > 50 {
-            spawn_maybe(&my_units, UnitType::Zerg_Larva);
+            spawn_maybe(&my_units, UnitType::Zerg_Drone);
         }
     }
 }
