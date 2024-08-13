@@ -1,4 +1,7 @@
-use crate::{build_order::BuildOrder, build_position::position_building};
+use crate::{
+    build_order::BuildOrder,
+    build_position::{position_building, BuildLoc},
+};
 use rsbwapi::*;
 
 pub struct BotCallbacks {
@@ -35,7 +38,9 @@ impl AiModule for BotCallbacks {
                     .iter()
                     .find(|u| u.get_type() == UnitType::Zerg_Drone && !u.is_idle());
                 if let Some(builder_drone) = builder_drone {
-                    if let Some((x, y)) = position_building(game, to_build, builder_drone) {
+                    if let Some(BuildLoc { x, y }) =
+                        position_building(game, to_build, builder_drone)
+                    {
                         println!("placing a {:?} at ({},{})", to_build, x, y);
                         builder_drone.build(to_build, (x, y)).ok();
                         self.build.placed_building(to_build);
