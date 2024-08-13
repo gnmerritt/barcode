@@ -27,8 +27,9 @@ fn spawn_maybe(units: &Vec<Unit>, utype: UnitType) {
 impl AiModule for BotCallbacks {
     fn on_frame(&mut self, game: &Game) {
         let self_ = game.self_().unwrap();
-        let mut frame_minerals = self_.minerals();
-        let mut frame_gas = self_.gas();
+        self.build.check_placed_buildings(game);
+        let mut frame_minerals = self_.minerals() - self.build.spent_minerals();
+        let mut frame_gas = self_.gas() - self.build.spent_minerals();
         let my_units = self_.get_units();
 
         // place our next building
