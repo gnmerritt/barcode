@@ -6,12 +6,14 @@ use rsbwapi::*;
 
 pub struct BotCallbacks {
     build: BuildOrder,
+    drone_scout_id: Option<usize>,
 }
 
 impl BotCallbacks {
     pub fn new() -> Self {
         BotCallbacks {
             build: BuildOrder::new(),
+            drone_scout_id: None,
         }
     }
 }
@@ -75,6 +77,20 @@ impl AiModule for BotCallbacks {
         }
         if frame_minerals >= 50 && next_building.is_none() {
             spawn_maybe(&my_units, UnitType::Zerg_Drone);
+        }
+
+        // send one drone to the center of the map to find our natural
+        if self_.supply_used() >= 20 && self.drone_scout_id.is_none() {
+            let drone = my_units
+                .iter()
+                .find(|u| u.get_type() == UnitType::Zerg_Drone);
+            if let Some(drone) = drone {
+                self.drone_scout_id = Some(drone.get_id());
+                println!("sending drone scout");
+                let x = game.map_width() / 2;
+                let y = game.map_height() / 2;
+                drone.move_(TilePosition{ x, y }.to_position()).ok();
+            }
         }
 
         // scout other starting locs with overlords
