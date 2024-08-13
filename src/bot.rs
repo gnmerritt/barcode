@@ -33,11 +33,13 @@ impl AiModule for BotCallbacks {
         let my_units = self_.get_units();
 
         // place our next building
-        if let Some(to_build) = self.build.get_next_building(game) {
+        let next_building = self.build.get_next_building(game);
+        if let Some(to_build) = next_building {
             if frame_minerals >= to_build.mineral_price() && frame_gas >= to_build.gas_price() {
                 let builder_drone = my_units
                     .iter()
                     .find(|u| u.get_type() == UnitType::Zerg_Drone && !u.is_idle());
+                println!("found drone to build {:?}", to_build);
                 if let Some(builder_drone) = builder_drone {
                     if let Some(BuildLoc { x, y }) =
                         position_building(game, to_build, builder_drone)
@@ -71,7 +73,7 @@ impl AiModule for BotCallbacks {
         if self_.supply_used() >= self_.supply_total() - 2 && frame_minerals >= 100 {
             spawn_maybe(&my_units, UnitType::Zerg_Overlord);
         }
-        if frame_minerals >= 50 {
+        if frame_minerals >= 50 && next_building.is_none() {
             spawn_maybe(&my_units, UnitType::Zerg_Drone);
         }
 
@@ -82,7 +84,6 @@ impl AiModule for BotCallbacks {
             .find(|u| u.get_type() == UnitType::Zerg_Hatchery)
             .expect("dead when we have no hatcheries");
         let hatch_pos = hatch.get_tile_position();
-        println!("hatch at {hatch_pos}");
         let mut overlords = my_units
             .iter()
             .filter(|u| u.get_type() == UnitType::Zerg_Overlord);
