@@ -11,6 +11,7 @@ impl BuildOrder {
     pub fn new() -> Self {
         BuildOrder {
             to_build: vec![
+                // NB: these supplies written like they'd show up in build orders
                 (UnitType::Zerg_Hatchery, 11),
                 (UnitType::Zerg_Spawning_Pool, 10),
                 (UnitType::Zerg_Extractor, 9),
@@ -26,7 +27,8 @@ impl BuildOrder {
         let self_ = game.self_().unwrap();
         let supply = self_.supply_used();
         if let Some((building, min_supply)) = self.to_build.first() {
-            if supply >= *min_supply {
+            // remember that BW doubles supplies
+            if supply >= 2 * min_supply {
                 return Some(building.clone());
             } else {
                 return None;

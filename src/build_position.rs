@@ -58,7 +58,7 @@ fn position_new_base(game: &Game, builder: &Unit) -> Option<BuildLoc> {
         .collect();
     // there's a different set of build checks for new bases, use a special building type
     let bt = UnitType::Special_Start_Location;
-    let mut geysers = game.get_geysers();
+    let mut geysers = game.get_static_geysers();
     // sort geysers by how far they are from our hatcheries
     geysers.sort_by_cached_key(|g| hatches.iter().map(|h| g.get_distance(h)).min());
     let checker = GameCanBuild {
