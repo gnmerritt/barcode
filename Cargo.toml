@@ -4,5 +4,13 @@ version = "0.1.0"
 authors = ["Nathan Merritt <nathan@gnmerritt.net>"]
 edition = "2021"
 
+[lib]
+name = "barcode"
+path = "src/lib.rs"
+
+[[bin]]
+name = "barcode"
+path = "src/main.rs"
+
 [dependencies]
 rsbwapi = "0.3.3"
