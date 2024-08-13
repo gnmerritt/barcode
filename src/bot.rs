@@ -21,8 +21,9 @@ impl BotCallbacks {
 fn spawn_maybe(units: &Vec<Unit>, utype: UnitType) {
     let larva = units.iter().find(|u| u.get_type() == UnitType::Zerg_Larva);
     if let Some(larva) = larva {
-        println!("spawning a {:?}", utype);
-        larva.train(utype).ok();
+        if larva.train(utype).is_ok() {
+            println!("spawning a {:?}", utype);
+        }
     }
 }
 
@@ -35,7 +36,7 @@ impl AiModule for BotCallbacks {
         let my_units = self_.get_units();
 
         // place our next building
-        let next_building = self.build.get_next_building(game);
+        let next_building = self.build.get_next_building(self_.supply_used());
         if let Some(to_build) = next_building {
             if frame_minerals >= to_build.mineral_price() && frame_gas >= to_build.gas_price() {
                 let builder_drone = my_units
@@ -47,10 +48,14 @@ impl AiModule for BotCallbacks {
                         position_building(game, to_build, builder_drone)
                     {
                         println!("placing a {:?} at ({},{})", to_build, x, y);
-                        builder_drone.build(to_build, (x, y)).ok();
-                        self.build.placed_building(to_build);
-                        frame_minerals -= to_build.mineral_price();
-                        frame_gas -= to_build.gas_price();
+                        let res = builder_drone.build(to_build, (x, y));
+                        if let Ok(true) = res {
+                            self.build.placed_building(to_build);
+                            frame_minerals -= to_build.mineral_price();
+                            frame_gas -= to_build.gas_price();
+                        } else {
+                            println!("placing {:?} failed: {:?}", to_build, res);
+                        }
                     }
                 }
             }
@@ -65,7 +70,7 @@ impl AiModule for BotCallbacks {
         });
         for m in minerals {
             if let Some(worker) = idle_workers.next() {
-                println!("worker {:?} gathering {:?}", &worker, &m);
+                println!("worker {} gathering {:?}", worker.get_id(), &m);
                 worker.gather(&m).ok();
             }
         }
@@ -73,7 +78,16 @@ impl AiModule for BotCallbacks {
         // make overlords and drones
         // note: supply is doubled by BWAPI so that Zerglings can use an interger amount of supply
         if self_.supply_used() >= self_.supply_total() - 2 && frame_minerals >= 100 {
-            spawn_maybe(&my_units, UnitType::Zerg_Overlord);
+            // TODO: this fires again right after an overlord spawns but
+            // before the supply kicks in and makes an extra overlord
+            let morphing_overlord = my_units.iter().find(|u| {
+                u.get_type() == UnitType::Zerg_Egg
+                    && u.is_morphing()
+                    && u.get_build_type() == UnitType::Zerg_Overlord
+            });
+            if morphing_overlord.is_none() {
+                spawn_maybe(&my_units, UnitType::Zerg_Overlord);
+            }
         }
         if frame_minerals >= 50 && next_building.is_none() {
             spawn_maybe(&my_units, UnitType::Zerg_Drone);
@@ -86,10 +100,14 @@ impl AiModule for BotCallbacks {
                 .find(|u| u.get_type() == UnitType::Zerg_Drone);
             if let Some(drone) = drone {
                 self.drone_scout_id = Some(drone.get_id());
-                println!("sending drone scout");
                 let x = game.map_width() / 2;
                 let y = game.map_height() / 2;
-                drone.move_(TilePosition{ x, y }.to_position()).ok();
+                let tp = TilePosition { x, y };
+                println!(
+                    "sending drone scout to middle position={:?}",
+                    tp.to_position()
+                );
+                drone.move_(tp.to_position()).ok();
             }
         }
 
@@ -107,7 +125,7 @@ impl AiModule for BotCallbacks {
             if loc.distance(hatch_pos) > 20.0 {
                 if let Some(overlord) = overlords.next() {
                     overlord.move_(loc.to_position()).ok();
-                    println!("sending overlord to scout {}", loc.to_position());
+                    //println!("sending overlord to scout {}", loc.to_position());
                 }
             }
         }

@@ -9,6 +9,7 @@ pub(crate) struct BuildLoc {
 trait CanBuild {
     fn can_build_at(&self, loc: &BuildLoc) -> bool;
     fn bounds(&self) -> (BuildLoc, BuildLoc);
+    fn width(&self) -> i32;
 }
 
 struct GameCanBuild<'a> {
@@ -20,7 +21,7 @@ struct GameCanBuild<'a> {
 impl<'a> CanBuild for GameCanBuild<'a> {
     fn can_build_at(&self, loc: &BuildLoc) -> bool {
         self.game
-            .can_build_here(self.builder, (loc.x, loc.y), self.building_type, false)
+            .can_build_here(self.builder, (loc.x, loc.y), self.building_type, true)
             .unwrap_or(false)
     }
 
@@ -33,6 +34,10 @@ impl<'a> CanBuild for GameCanBuild<'a> {
             },
         )
     }
+
+    fn width(&self) -> i32 {
+        self.building_type.tile_width()
+    }
 }
 
 pub fn position_building(game: &Game, bt: UnitType, builder: &Unit) -> Option<BuildLoc> {
@@ -43,7 +48,7 @@ pub fn position_building(game: &Game, bt: UnitType, builder: &Unit) -> Option<Bu
     };
     match bt {
         UnitType::Zerg_Hatchery => position_new_base(game, builder),
-        _ if bt.is_building() => position_anywhere(&checker),
+        _ if bt.is_building() => position_near_hatch(game, &checker),
         _ => None,
     }
 }
@@ -58,7 +63,7 @@ fn position_new_base(game: &Game, builder: &Unit) -> Option<BuildLoc> {
         .collect();
     // there's a different set of build checks for new bases, use a special building type
     let bt = UnitType::Special_Start_Location;
-    let mut geysers = game.get_static_geysers();
+    let mut geysers = game.get_geysers();
     // sort geysers by how far they are from our hatcheries
     geysers.sort_by_cached_key(|g| hatches.iter().map(|h| g.get_distance(h)).min());
     let checker = GameCanBuild {
@@ -66,39 +71,66 @@ fn position_new_base(game: &Game, builder: &Unit) -> Option<BuildLoc> {
         builder,
         building_type: bt,
     };
+    println!("PNB post-sort geysers={:?}", &geysers);
     // assume for now that each hatch is next to a unique geyser, so those
     // will be the closest and not where we should build the next hatch
+    //
+    // this doesn't work at the moment, also geysers go away when we build an extractor on them
     for g in geysers.iter().skip(hatches.len()) {
         let base_near_geyser = position_near(&checker, g.get_tile_position());
         if base_near_geyser.is_some() {
             return base_near_geyser;
         }
     }
+    let near_hatch = position_near_hatch(game, &checker);
+    if near_hatch.is_some() {
+        return near_hatch;
+    }
+    println!("positing anywhere, near hatch failed");
     position_anywhere(&checker)
+}
+
+fn position_near_hatch(game: &Game, checker: &dyn CanBuild) -> Option<BuildLoc> {
+    println!("positioning near existing hatches");
+    let hatches: Vec<_> = game
+        .self_()
+        .unwrap()
+        .get_units()
+        .into_iter()
+        .filter(|u| u.get_type() == UnitType::Zerg_Hatchery)
+        .collect();
+    for hatch in hatches {
+        let near_hatch = position_near(checker, hatch.get_tile_position());
+        if near_hatch.is_some() {
+            return near_hatch;
+        }
+    }
+    None
 }
 
 fn position_near(checker: &dyn CanBuild, location: TilePosition) -> Option<BuildLoc> {
     let TilePosition { x, y } = location;
-    let (bottom_left, top_right) = checker.bounds();
+    let (top_left, bottom_right) = checker.bounds();
 
-    // search in a 16x16 grid centered on the initial location
+    // search in a grid centered on the initial location
     use std::cmp::{max, min};
-    let search_radius = 8;
-    let bl_x = max(x - search_radius, bottom_left.x);
-    let bl_y = max(y - search_radius, bottom_left.y);
-    let tr_x = min(x + search_radius, top_right.x);
-    let tr_y = min(y + search_radius, top_right.y);
+    let search_radius = 4 * checker.width();
+    let tl_x = max(x - search_radius, top_left.x);
+    let tl_y = max(y - search_radius, top_left.y);
+    let br_x = min(x + search_radius, bottom_right.x);
+    let br_y = min(y + search_radius, bottom_right.y);
 
-    building_pos_search(bl_x, tr_x, bl_y, tr_y, checker)
+    building_pos_search(tl_x, br_x, tl_y, br_y, checker)
 }
 
+#[allow(dead_code)]
 fn position_anywhere(checker: &dyn CanBuild) -> Option<BuildLoc> {
-    let (bottom_left, top_right) = checker.bounds();
+    let (top_left, bottom_right) = checker.bounds();
     building_pos_search(
-        bottom_left.x,
-        top_right.x,
-        bottom_left.y,
-        top_right.y,
+        top_left.x,
+        bottom_right.x,
+        top_left.y,
+        bottom_right.y,
         checker,
     )
 }
@@ -137,6 +169,9 @@ mod test {
 
         fn bounds(&self) -> (BuildLoc, BuildLoc) {
             (BuildLoc { x: 0, y: 0 }, BuildLoc { x: 100, y: 100 })
+        }
+        fn width(&self) -> i32 {
+            1
         }
     }
 
