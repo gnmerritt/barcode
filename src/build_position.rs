@@ -1,15 +1,10 @@
 use rsbwapi::*;
 
-#[derive(PartialEq, Copy, Clone, Debug)]
-pub(crate) struct BuildLoc {
-    pub x: i32,
-    pub y: i32,
-}
-
 trait CanBuild {
-    fn can_build_at(&self, loc: &BuildLoc) -> bool;
-    fn bounds(&self) -> (BuildLoc, BuildLoc);
+    fn can_build_at(&self, loc: &TilePosition) -> bool;
+    fn bounds(&self) -> (TilePosition, TilePosition);
     fn width(&self) -> i32;
+    fn debug_rect(&self, tl: ScaledPosition<1>, br: ScaledPosition<1>, color: Color);
 }
 
 struct GameCanBuild<'a> {
@@ -19,16 +14,16 @@ struct GameCanBuild<'a> {
 }
 
 impl<'a> CanBuild for GameCanBuild<'a> {
-    fn can_build_at(&self, loc: &BuildLoc) -> bool {
+    fn can_build_at(&self, loc: &TilePosition) -> bool {
         self.game
             .can_build_here(self.builder, (loc.x, loc.y), self.building_type, true)
             .unwrap_or(false)
     }
 
-    fn bounds(&self) -> (BuildLoc, BuildLoc) {
+    fn bounds(&self) -> (TilePosition, TilePosition) {
         (
-            BuildLoc { x: 0, y: 0 },
-            BuildLoc {
+            TilePosition { x: 0, y: 0 },
+            TilePosition {
                 x: self.game.map_width(),
                 y: self.game.map_height(),
             },
@@ -38,9 +33,13 @@ impl<'a> CanBuild for GameCanBuild<'a> {
     fn width(&self) -> i32 {
         self.building_type.tile_width()
     }
+
+    fn debug_rect(&self, tl: ScaledPosition<1>, br: ScaledPosition<1>, color: Color) {
+        self.game.draw_box_map(tl, br, color, false);
+    }
 }
 
-pub fn position_building(game: &Game, bt: UnitType, builder: &Unit) -> Option<BuildLoc> {
+pub fn position_building(game: &Game, bt: UnitType, builder: &Unit) -> Option<TilePosition> {
     let checker = GameCanBuild {
         game,
         builder,
@@ -53,7 +52,7 @@ pub fn position_building(game: &Game, bt: UnitType, builder: &Unit) -> Option<Bu
     }
 }
 
-fn position_new_base(game: &Game, builder: &Unit) -> Option<BuildLoc> {
+fn position_new_base(game: &Game, builder: &Unit) -> Option<TilePosition> {
     let hatches: Vec<_> = game
         .self_()
         .unwrap()
@@ -61,8 +60,7 @@ fn position_new_base(game: &Game, builder: &Unit) -> Option<BuildLoc> {
         .into_iter()
         .filter(|u| u.get_type() == UnitType::Zerg_Hatchery)
         .collect();
-    // there's a different set of build checks for new bases, use a special building type
-    let bt = UnitType::Special_Start_Location;
+    let bt = UnitType::Zerg_Hatchery;
     let mut geysers = game.get_geysers();
     // sort geysers by how far they are from our hatcheries
     geysers.sort_by_cached_key(|g| hatches.iter().map(|h| g.get_distance(h)).min());
@@ -90,7 +88,7 @@ fn position_new_base(game: &Game, builder: &Unit) -> Option<BuildLoc> {
     position_anywhere(&checker)
 }
 
-fn position_near_hatch(game: &Game, checker: &dyn CanBuild) -> Option<BuildLoc> {
+fn position_near_hatch(game: &Game, checker: &dyn CanBuild) -> Option<TilePosition> {
     println!("positioning near existing hatches");
     let hatches: Vec<_> = game
         .self_()
@@ -100,7 +98,13 @@ fn position_near_hatch(game: &Game, checker: &dyn CanBuild) -> Option<BuildLoc> 
         .filter(|u| u.get_type() == UnitType::Zerg_Hatchery)
         .collect();
     for hatch in hatches {
-        let near_hatch = position_near(checker, hatch.get_tile_position());
+        let hatch_pos = hatch.get_tile_position();
+        println!(
+            "looking hatch at {}, checker width={}",
+            hatch.get_tile_position(),
+            checker.width()
+        );
+        let near_hatch = position_near(checker, hatch_pos);
         if near_hatch.is_some() {
             return near_hatch;
         }
@@ -108,23 +112,29 @@ fn position_near_hatch(game: &Game, checker: &dyn CanBuild) -> Option<BuildLoc> 
     None
 }
 
-fn position_near(checker: &dyn CanBuild, location: TilePosition) -> Option<BuildLoc> {
+fn position_near(checker: &dyn CanBuild, location: TilePosition) -> Option<TilePosition> {
     let TilePosition { x, y } = location;
     let (top_left, bottom_right) = checker.bounds();
 
     // search in a grid centered on the initial location
     use std::cmp::{max, min};
-    let search_radius = 4 * checker.width();
+    let search_radius = 3 * checker.width();
     let tl_x = max(x - search_radius, top_left.x);
     let tl_y = max(y - search_radius, top_left.y);
     let br_x = min(x + search_radius, bottom_right.x);
     let br_y = min(y + search_radius, bottom_right.y);
 
-    building_pos_search(tl_x, br_x, tl_y, br_y, checker)
+    let tl = TilePosition { x: tl_x, y: tl_y }.to_position();
+    let br = TilePosition { x: br_x, y: br_y }.to_position();
+    checker.debug_rect(tl, br, Color::Red);
+
+    let mut matches = building_pos_search(tl_x, br_x, tl_y, br_y, checker);
+    matches.sort_by_cached_key(|bl| bl.chebyshev_distance(location));
+    return matches.into_iter().next();
 }
 
 #[allow(dead_code)]
-fn position_anywhere(checker: &dyn CanBuild) -> Option<BuildLoc> {
+fn position_anywhere(checker: &dyn CanBuild) -> Option<TilePosition> {
     let (top_left, bottom_right) = checker.bounds();
     building_pos_search(
         top_left.x,
@@ -133,6 +143,8 @@ fn position_anywhere(checker: &dyn CanBuild) -> Option<BuildLoc> {
         bottom_right.y,
         checker,
     )
+    .into_iter()
+    .next()
 }
 
 fn building_pos_search(
@@ -141,53 +153,62 @@ fn building_pos_search(
     y_start: i32,
     y_end: i32,
     checker: &dyn CanBuild,
-) -> Option<BuildLoc> {
+) -> Vec<TilePosition> {
+    let mut matches = vec![];
     for y in y_start..y_end {
         for x in x_start..x_end {
-            let loc = BuildLoc { x, y };
+            let loc = TilePosition { x, y };
             if checker.can_build_at(&loc) {
-                return Some(loc);
+                matches.push(loc);
             }
         }
     }
-    None
+    matches
 }
 
 #[cfg(test)]
 mod test {
     use rsbwapi::TilePosition;
 
-    use super::{building_pos_search, position_near, BuildLoc, CanBuild};
+    use super::{building_pos_search, position_near, CanBuild};
 
     struct FakeChecker {
-        allowed: Vec<BuildLoc>,
+        allowed: Vec<TilePosition>,
     }
     impl CanBuild for FakeChecker {
-        fn can_build_at(&self, loc: &BuildLoc) -> bool {
+        fn can_build_at(&self, loc: &TilePosition) -> bool {
             return self.allowed.iter().find(|l| *l == loc).is_some();
         }
 
-        fn bounds(&self) -> (BuildLoc, BuildLoc) {
-            (BuildLoc { x: 0, y: 0 }, BuildLoc { x: 100, y: 100 })
+        fn bounds(&self) -> (TilePosition, TilePosition) {
+            (TilePosition { x: 0, y: 0 }, TilePosition { x: 100, y: 100 })
         }
         fn width(&self) -> i32 {
             1
+        }
+        fn debug_rect(
+            &self,
+            tl: rsbwapi::ScaledPosition<1>,
+            br: rsbwapi::ScaledPosition<1>,
+            _color: rsbwapi::Color,
+        ) {
+            println!("tl={:?}, br={:?}", tl, br);
         }
     }
 
     #[test]
     fn test_build_pos_search() {
         let checker = FakeChecker {
-            allowed: vec![BuildLoc { x: 9, y: 9 }],
+            allowed: vec![TilePosition { x: 9, y: 9 }],
         };
         assert_eq!(
             building_pos_search(0, 100, 0, 100, &checker),
-            Some(BuildLoc { x: 9, y: 9 }),
+            vec![TilePosition { x: 9, y: 9 }],
             "normal search failed"
         );
         assert_eq!(
             building_pos_search(0, 5, 0, 100, &checker),
-            None,
+            vec![],
             "restricted bounds search failed"
         );
     }
@@ -197,26 +218,26 @@ mod test {
         let checker = FakeChecker { allowed: vec![] };
         assert_eq!(
             building_pos_search(0, 100, 0, 100, &checker),
-            None,
+            vec![],
             "normal search failed"
         );
         assert_eq!(
             building_pos_search(100, 999, -1390, -30, &checker),
-            None,
+            vec![],
             "search out of bounds failed"
         );
         assert_eq!(
             building_pos_search(100, 0, 100, 0, &checker),
-            None,
+            vec![],
             "search backwards failed"
         );
     }
 
     #[test]
     fn test_find_near_loc() {
-        let wanted = BuildLoc { x: 49, y: 49 };
+        let wanted = TilePosition { x: 49, y: 49 };
         let checker = FakeChecker {
-            allowed: vec![wanted.clone(), BuildLoc { x: 80, y: 80 }],
+            allowed: vec![wanted.clone(), TilePosition { x: 80, y: 80 }],
         };
         let near_loc = TilePosition { x: 50, y: 50 };
         assert_eq!(

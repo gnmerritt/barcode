@@ -1,7 +1,4 @@
-use crate::{
-    build_order::BuildOrder,
-    build_position::{position_building, BuildLoc},
-};
+use crate::{build_order::BuildOrder, build_position::position_building};
 use rsbwapi::*;
 
 pub struct BotCallbacks {
@@ -28,7 +25,10 @@ fn spawn_maybe(units: &Vec<Unit>, utype: UnitType) {
 }
 
 impl AiModule for BotCallbacks {
+    fn on_unit_create(&mut self, _game: &Game, _unit: Unit) {}
+
     fn on_frame(&mut self, game: &Game) {
+        let this_frame = game.get_frame_count();
         let self_ = game.self_().unwrap();
         self.build.check_placed_buildings(game);
         let mut frame_minerals = self_.minerals() - self.build.spent_minerals();
@@ -44,11 +44,9 @@ impl AiModule for BotCallbacks {
                     .find(|u| u.get_type() == UnitType::Zerg_Drone && !u.is_idle());
                 println!("found drone to build {:?}", to_build);
                 if let Some(builder_drone) = builder_drone {
-                    if let Some(BuildLoc { x, y }) =
-                        position_building(game, to_build, builder_drone)
-                    {
-                        println!("placing a {:?} at ({},{})", to_build, x, y);
-                        let res = builder_drone.build(to_build, (x, y));
+                    if let Some(tp) = position_building(game, to_build, builder_drone) {
+                        println!("placing a {:?} at {:?}", to_build, tp);
+                        let res = builder_drone.build(to_build, tp);
                         if let Ok(true) = res {
                             self.build.placed_building(to_build);
                             frame_minerals -= to_build.mineral_price();
@@ -87,9 +85,11 @@ impl AiModule for BotCallbacks {
             });
             if morphing_overlord.is_none() {
                 spawn_maybe(&my_units, UnitType::Zerg_Overlord);
+            } else {
+                println!("found morphing overlord, wont spawn another");
             }
         }
-        if frame_minerals >= 50 && next_building.is_none() {
+        if frame_minerals >= 50 + next_building.map_or(0, |u| u.mineral_price()) {
             spawn_maybe(&my_units, UnitType::Zerg_Drone);
         }
 
