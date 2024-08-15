@@ -1,4 +1,4 @@
-use crate::{build_order::BuildOrder, build_position::position_building};
+use crate::{build_order::BuildOrder, build_position::position_building, counts::Counts};
 use rsbwapi::*;
 
 pub struct BotCallbacks {
@@ -15,30 +15,36 @@ impl BotCallbacks {
     }
 }
 
-fn spawn_maybe(units: &Vec<Unit>, utype: UnitType) {
+fn spawn_maybe(units: &Vec<Unit>, utype: UnitType) -> Option<UnitType> {
     let larva = units.iter().find(|u| u.get_type() == UnitType::Zerg_Larva);
     if let Some(larva) = larva {
-        if larva.train(utype).is_ok() {
+        if let Ok(true) = larva.train(utype) {
             println!("spawning a {:?}", utype);
+            return Some(utype);
         }
     }
+    None
 }
 
 impl AiModule for BotCallbacks {
-    fn on_unit_create(&mut self, _game: &Game, _unit: Unit) {}
+    fn on_unit_create(&mut self, game: &Game, unit: Unit) {
+        println!(
+            "{:?} created at {}",
+            unit.get_type(),
+            game.get_frame_count()
+        );
+    }
 
     fn on_frame(&mut self, game: &Game) {
-        let this_frame = game.get_frame_count();
-        let self_ = game.self_().unwrap();
         self.build.check_placed_buildings(game);
-        let mut frame_minerals = self_.minerals() - self.build.spent_minerals();
-        let mut frame_gas = self_.gas() - self.build.spent_minerals();
+        let mut counts = Counts::new(game, &self.build);
+        let self_ = game.self_().unwrap();
         let my_units = self_.get_units();
 
         // place our next building
         let next_building = self.build.get_next_building(self_.supply_used());
         if let Some(to_build) = next_building {
-            if frame_minerals >= to_build.mineral_price() && frame_gas >= to_build.gas_price() {
+            if counts.can_afford(to_build) {
                 let builder_drone = my_units
                     .iter()
                     .find(|u| u.get_type() == UnitType::Zerg_Drone && !u.is_idle());
@@ -49,12 +55,13 @@ impl AiModule for BotCallbacks {
                         let res = builder_drone.build(to_build, tp);
                         if let Ok(true) = res {
                             self.build.placed_building(to_build);
-                            frame_minerals -= to_build.mineral_price();
-                            frame_gas -= to_build.gas_price();
                         } else {
                             println!("placing {:?} failed: {:?}", to_build, res);
                         }
                     }
+                    // buildings spend when they start, don't spend the building's
+                    // money on units in the meantime
+                    counts.bought(to_build);
                 }
             }
         }
@@ -75,7 +82,9 @@ impl AiModule for BotCallbacks {
 
         // make overlords and drones
         // note: supply is doubled by BWAPI so that Zerglings can use an interger amount of supply
-        if self_.supply_used() >= self_.supply_total() - 2 && frame_minerals >= 100 {
+        if self_.supply_used() >= counts.supply_max() - 2
+            && counts.can_afford(UnitType::Zerg_Overlord)
+        {
             // TODO: this fires again right after an overlord spawns but
             // before the supply kicks in and makes an extra overlord
             let morphing_overlord = my_units.iter().find(|u| {
@@ -84,13 +93,17 @@ impl AiModule for BotCallbacks {
                     && u.get_build_type() == UnitType::Zerg_Overlord
             });
             if morphing_overlord.is_none() {
-                spawn_maybe(&my_units, UnitType::Zerg_Overlord);
+                println!("need an overlord at {}", counts.frame());
+                spawn_maybe(&my_units, UnitType::Zerg_Overlord).map(|u| counts.bought(u));
             } else {
-                println!("found morphing overlord, wont spawn another");
+                println!(
+                    "found morphing overlord, wont spawn another at {}",
+                    counts.frame()
+                );
             }
         }
-        if frame_minerals >= 50 + next_building.map_or(0, |u| u.mineral_price()) {
-            spawn_maybe(&my_units, UnitType::Zerg_Drone);
+        if counts.can_afford(UnitType::Zerg_Drone) {
+            spawn_maybe(&my_units, UnitType::Zerg_Drone).map(|u| counts.bought(u));
         }
 
         // send one drone to the center of the map to find our natural
