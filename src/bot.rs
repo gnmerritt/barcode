@@ -52,6 +52,20 @@ impl AiModule for BotCallbacks {
         // place our next building
         let next_building = self.build.get_next_building(self_.supply_used());
         if let Some(to_build) = next_building {
+            if to_build == UnitType::Zerg_Lair || to_build == UnitType::Zerg_Hive {
+                let base = if to_build == UnitType::Zerg_Lair {
+                    UnitType::Zerg_Hatchery
+                } else {
+                    UnitType::Zerg_Lair
+                };
+                if let Some(to_upgrade) = my_units.iter().find(|u| u.get_type() == base) {
+                    if let Ok(true) = to_upgrade.morph(to_build) {
+                        println!("morphed a {:?}", to_build);
+                        counts.bought(to_build);
+                        self.build.placed_building(to_build);
+                    }
+                }
+            }
             if counts.can_afford(to_build) {
                 let builder_drone = my_units
                     .iter()
