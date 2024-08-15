@@ -1,8 +1,11 @@
-use crate::{build_order::BuildOrder, build_position::position_building, counts::Counts};
+use crate::{
+    build_order::BuildOrder, build_position::position_building, counts::Counts, gas::GasManager,
+};
 use rsbwapi::*;
 
 pub struct BotCallbacks {
     build: BuildOrder,
+    gasses: GasManager,
     drone_scout_id: Option<usize>,
 }
 
@@ -10,6 +13,7 @@ impl BotCallbacks {
     pub fn new() -> Self {
         BotCallbacks {
             build: BuildOrder::new(),
+            gasses: GasManager::new(),
             drone_scout_id: None,
         }
     }
@@ -27,16 +31,20 @@ fn spawn_maybe(units: &Vec<Unit>, utype: UnitType) -> Option<UnitType> {
 }
 
 impl AiModule for BotCallbacks {
-    fn on_unit_create(&mut self, game: &Game, unit: Unit) {
+    fn on_unit_create(&mut self, _game: &Game, _unit: Unit) {
+        // note: this seems to only fire for larva and not when they finish morphing
+        /*
         println!(
             "{:?} created at {}",
             unit.get_type(),
             game.get_frame_count()
         );
+        */
     }
 
     fn on_frame(&mut self, game: &Game) {
         self.build.check_placed_buildings(game);
+        self.gasses.on_frame(game);
         let mut counts = Counts::new(game, &self.build);
         let self_ = game.self_().unwrap();
         let my_units = self_.get_units();
@@ -57,6 +65,7 @@ impl AiModule for BotCallbacks {
                             self.build.placed_building(to_build);
                         } else {
                             println!("placing {:?} failed: {:?}", to_build, res);
+                            builder_drone.move_(tp.to_position()).ok();
                         }
                     }
                     // buildings spend when they start, don't spend the building's
@@ -85,21 +94,18 @@ impl AiModule for BotCallbacks {
         if self_.supply_used() >= counts.supply_max() - 2
             && counts.can_afford(UnitType::Zerg_Overlord)
         {
-            // TODO: this fires again right after an overlord spawns but
-            // before the supply kicks in and makes an extra overlord
             let morphing_overlord = my_units.iter().find(|u| {
                 u.get_type() == UnitType::Zerg_Egg
                     && u.is_morphing()
                     && u.get_build_type() == UnitType::Zerg_Overlord
             });
             if morphing_overlord.is_none() {
-                println!("need an overlord at {}", counts.frame());
-                spawn_maybe(&my_units, UnitType::Zerg_Overlord).map(|u| counts.bought(u));
-            } else {
                 println!(
-                    "found morphing overlord, wont spawn another at {}",
+                    "need an overlord {} at {}",
+                    counts.supply_string(),
                     counts.frame()
                 );
+                spawn_maybe(&my_units, UnitType::Zerg_Overlord).map(|u| counts.bought(u));
             }
         }
         if counts.can_afford(UnitType::Zerg_Drone) {
