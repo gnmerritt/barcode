@@ -1,88 +1,157 @@
 use rsbwapi::*;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, PartialEq)]
+struct BuildStep {
+    unit_type: UnitType,
+    min_supply: i32,
+    building_type_count: i8,
+}
+
+impl BuildStep {
+    fn new(unit_type: UnitType, min_supply: i32, building_type_count: i8) -> Self {
+        BuildStep {
+            unit_type,
+            min_supply,
+            building_type_count,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PlacedBuilding {
+    placed_frame: i32,
+    building_type: UnitType,
+}
 
 pub struct BuildOrder {
-    to_build: VecDeque<(UnitType, i32)>,
-    placed_buildings: Vec<UnitType>,
+    frame: i32,
+    to_build: Vec<BuildStep>,
+    building_counts: HashMap<UnitType, i8>,
+    placed_buildings: Vec<PlacedBuilding>,
     building_ids: HashSet<usize>,
 }
 
 impl BuildOrder {
     pub fn new() -> Self {
         BuildOrder {
-            to_build: VecDeque::from([
+            frame: 0,
+            to_build: vec![
                 // NB: these supplies written like they'd show up in build orders
-                (UnitType::Zerg_Hatchery, 11),
-                (UnitType::Zerg_Spawning_Pool, 10),
-                (UnitType::Zerg_Extractor, 9),
-                (UnitType::Zerg_Lair, 10),
-                (UnitType::Zerg_Spire, 20),
-                (UnitType::Zerg_Hatchery, 30),
-                (UnitType::Zerg_Hatchery, 50),
-                (UnitType::Zerg_Queens_Nest, 50),
-                (UnitType::Zerg_Hive, 50),
-                (UnitType::Zerg_Hatchery, 70),
-                (UnitType::Zerg_Hatchery, 90),
-            ]),
+                BuildStep::new(UnitType::Zerg_Hatchery, 11, 2),
+                BuildStep::new(UnitType::Zerg_Spawning_Pool, 10, 1),
+                BuildStep::new(UnitType::Zerg_Extractor, 9, 1),
+                BuildStep::new(UnitType::Zerg_Lair, 10, 1),
+                BuildStep::new(UnitType::Zerg_Extractor, 9, 2),
+                BuildStep::new(UnitType::Zerg_Spire, 20, 1),
+                BuildStep::new(UnitType::Zerg_Hatchery, 30, 3),
+                BuildStep::new(UnitType::Zerg_Hatchery, 50, 4),
+                BuildStep::new(UnitType::Zerg_Extractor, 9, 3),
+                BuildStep::new(UnitType::Zerg_Queens_Nest, 50, 1),
+                BuildStep::new(UnitType::Zerg_Hive, 50, 1),
+                BuildStep::new(UnitType::Zerg_Hatchery, 70, 5),
+                BuildStep::new(UnitType::Zerg_Hatchery, 90, 6),
+            ],
+            building_counts: HashMap::new(),
             placed_buildings: vec![],
             building_ids: HashSet::new(),
         }
     }
 
+    pub fn on_frame(&mut self, game: &Game) {
+        self.frame = game.get_frame_count();
+        if let Some(self_) = game.self_() {
+            let buildings = self_
+                .get_units()
+                .into_iter()
+                .filter(|u| u.get_type().is_building())
+                .map(|u| (u.get_id(), u.get_type()))
+                .collect();
+            self.check_placed_buildings(buildings);
+        }
+    }
+
     pub fn get_next_building(&self, supply_used: i32) -> Option<UnitType> {
-        if let Some((building, min_supply)) = self.to_build.front() {
-            // remember that BW doubles supplies
-            if supply_used >= 2 * min_supply {
-                return Some(building.clone());
-            } else {
-                return None;
+        for step in self.to_build.iter() {
+            let count = self.building_counts.get(&step.unit_type).unwrap_or(&0);
+            if *count < step.building_type_count {
+                // remember that BW doubles supplies
+                if supply_used >= 2 * step.min_supply {
+                    return Some(step.unit_type.clone());
+                } else {
+                    return None;
+                }
             }
         }
         None
     }
 
-    pub fn placed_building(&mut self, building: UnitType) {
-        // add to placed to we can keep track of its cost
-        self.placed_buildings.push(building);
-        // remove from build order queue
-        if let Some((bt, _)) = self.to_build.front() {
-            if building == *bt {
-                self.to_build.pop_front();
-            }
-        }
+    /**
+     * Keep track of buildings that have been placed but the drone may not have
+     * started morphing yet
+     */
+    pub fn placed_building(&mut self, building_type: UnitType) {
+        self.placed_buildings.push(PlacedBuilding {
+            building_type,
+            placed_frame: self.frame,
+        });
+        self.count_type(building_type);
+    }
+
+    fn count_type(&mut self, building_type: UnitType) {
+        self.building_counts
+            .entry(building_type)
+            .and_modify(|c| *c += 1)
+            .or_insert(1);
     }
 
     // remove buildings that have begun construction from our placed list
     // so we don't double-count their cost
-    pub fn check_placed_buildings(&mut self, game: &Game) {
-        let in_progress = game
-            .self_()
-            .unwrap()
-            .get_units()
-            .into_iter()
-            .filter(|u| u.get_type().is_building() && u.is_being_constructed());
-        for building in in_progress {
-            let id = building.get_id();
+    fn check_placed_buildings(&mut self, buildings: Vec<(usize, UnitType)>) {
+        self.building_counts.clear();
+
+        for (id, bt) in buildings {
+            self.count_type(bt);
+
+            // if this is the first frame they've existed make sure to remove
+            // them from the placed buildings list
             if !self.building_ids.contains(&id) {
                 self.building_ids.insert(id);
-                let bt = building.get_type();
-                let index = self.placed_buildings.iter().position(|t| *t == bt);
+                let index = self
+                    .placed_buildings
+                    .iter()
+                    .position(|t| t.building_type == bt);
                 if let Some(index) = index {
                     self.placed_buildings.swap_remove(index);
                 }
             }
+        }
+        // stop tracking placed builings after 150 frames
+        // TODO replace with watching the drone's id
+        self.placed_buildings
+            .retain(|pb| pb.placed_frame + 150 > self.frame);
+        // count placed buildings too
+        for pb in self.placed_buildings.iter() {
+            // replacing this with the method angers the borrow checker :-(
+            self.building_counts
+                .entry(pb.building_type)
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
         }
     }
 
     pub fn spent_minerals(&self) -> i32 {
         self.placed_buildings
             .iter()
-            .map(UnitType::mineral_price)
+            .map(|b| b.building_type.mineral_price())
             .sum()
     }
 
     pub fn spent_gas(&self) -> i32 {
-        self.placed_buildings.iter().map(UnitType::gas_price).sum()
+        self.placed_buildings
+            .iter()
+            .map(|b| b.building_type.gas_price())
+            .sum()
     }
 }
 
@@ -93,6 +162,9 @@ mod test {
     #[test]
     fn test_get_building() {
         let mut bo = BuildOrder::new();
+        // we start out with one hatch
+        bo.check_placed_buildings(vec![(10, UnitType::Zerg_Hatchery)]);
+
         assert_eq!(bo.get_next_building(8), None, "saw building too early");
         assert_eq!(
             bo.get_next_building(22),
@@ -123,8 +195,8 @@ mod test {
     #[test]
     fn test_spent_resources() {
         let mut bo = BuildOrder::new();
-        bo.placed_building(UnitType::Zerg_Hatchery);
-        assert_eq!(bo.spent_minerals(), UnitType::Zerg_Hatchery.mineral_price());
-        assert_eq!(bo.spent_gas(), UnitType::Zerg_Hatchery.gas_price());
+        bo.placed_building(UnitType::Zerg_Spire);
+        assert_eq!(bo.spent_minerals(), UnitType::Zerg_Spire.mineral_price());
+        assert_eq!(bo.spent_gas(), UnitType::Zerg_Spire.gas_price());
     }
 }

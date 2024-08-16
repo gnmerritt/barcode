@@ -43,8 +43,8 @@ impl AiModule for BotCallbacks {
     }
 
     fn on_frame(&mut self, game: &Game) {
-        self.build.check_placed_buildings(game);
         self.gasses.on_frame(game);
+        self.build.on_frame(game);
         let mut counts = Counts::new(game, &self.build);
         let self_ = game.self_().unwrap();
         let my_units = self_.get_units();

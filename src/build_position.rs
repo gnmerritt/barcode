@@ -74,7 +74,7 @@ fn position_new_base(game: &Game, builder: &Unit) -> Option<TilePosition> {
     // will be the closest and not where we should build the next hatch
     //
     // this doesn't work at the moment, also geysers go away when we build an extractor on them
-    for g in geysers.iter().skip(hatches.len()) {
+    for g in geysers {
         let base_near_geyser = position_near(&checker, g.get_tile_position());
         if base_near_geyser.is_some() {
             return base_near_geyser;
