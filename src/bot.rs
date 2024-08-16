@@ -7,6 +7,7 @@ pub struct BotCallbacks {
     build: BuildOrder,
     gasses: GasManager,
     drone_scout_id: Option<usize>,
+    drone_scout_locs: Vec<TilePosition>,
 }
 
 impl BotCallbacks {
@@ -15,6 +16,7 @@ impl BotCallbacks {
             build: BuildOrder::new(),
             gasses: GasManager::new(),
             drone_scout_id: None,
+            drone_scout_locs: vec![],
         }
     }
 }
@@ -105,7 +107,7 @@ impl AiModule for BotCallbacks {
 
         // make overlords and drones
         // note: supply is doubled by BWAPI so that Zerglings can use an interger amount of supply
-        if self_.supply_used() >= counts.supply_max() - 2
+        if counts.supply_used() >= counts.supply_max() - 2
             && counts.can_afford(UnitType::Zerg_Overlord)
         {
             let morphing_overlord = my_units.iter().find(|u| {
@@ -126,40 +128,54 @@ impl AiModule for BotCallbacks {
             spawn_maybe(&my_units, UnitType::Zerg_Drone).map(|u| counts.bought(u));
         }
 
-        // send one drone to the center of the map to find our natural
-        if self_.supply_used() >= 20 && self.drone_scout_id.is_none() {
+        // send out a drone to scout
+        if counts.supply_used() >= 20 && self.drone_scout_id.is_none() {
             let drone = my_units
                 .iter()
-                .find(|u| u.get_type() == UnitType::Zerg_Drone);
+                .find(|u| u.get_type() == UnitType::Zerg_Drone && !u.is_morphing());
             if let Some(drone) = drone {
+                println!("assigned a drone scout {:?}", drone);
+                drone.stop().ok();
                 self.drone_scout_id = Some(drone.get_id());
-                let x = game.map_width() / 2;
-                let y = game.map_height() / 2;
-                let tp = TilePosition { x, y };
-                println!(
-                    "sending drone scout to middle position={:?}",
-                    tp.to_position()
-                );
-                drone.move_(tp.to_position()).ok();
+                for s in game.get_start_locations() {
+                    self.drone_scout_locs.push(s);
+                }
             }
         }
-
-        // scout other starting locs with overlords
-        let hatch = self_
-            .get_units()
-            .into_iter()
-            .find(|u| u.get_type() == UnitType::Zerg_Hatchery)
-            .expect("dead when we have no hatcheries");
-        let hatch_pos = hatch.get_tile_position();
-        let mut overlords = my_units
-            .iter()
-            .filter(|u| u.get_type() == UnitType::Zerg_Overlord);
-        for loc in game.get_start_locations() {
-            if loc.distance(hatch_pos) > 20.0 {
-                if let Some(overlord) = overlords.next() {
-                    overlord.move_(loc.to_position()).ok();
-                    //println!("sending overlord to scout {}", loc.to_position());
+        if let Some(scout) = self.drone_scout_id.map(|id| game.get_unit(id)).flatten() {
+            if scout.exists() && scout.get_type() == UnitType::Zerg_Drone {
+                if scout.is_idle() {
+                    if let Some(next_loc) = self.drone_scout_locs.pop() {
+                        println!("sending scout {} to {}", scout.get_id(), next_loc);
+                        scout.move_(next_loc.to_position()).ok();
+                    }
                 }
+            } else {
+                println!("need a new scout");
+                self.drone_scout_id = None; // RIP drone, assign a new one
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn overlord_scout(game: &Game, self_: Player) {
+    // scout other starting locs with overlords
+    let hatch = self_
+        .get_units()
+        .into_iter()
+        .find(|u| u.get_type() == UnitType::Zerg_Hatchery)
+        .expect("dead when we have no hatcheries");
+    let hatch_pos = hatch.get_tile_position();
+    let mut overlords = self_
+        .get_units()
+        .into_iter()
+        .filter(|u| u.get_type() == UnitType::Zerg_Overlord);
+    for loc in game.get_start_locations() {
+        if loc.distance(hatch_pos) > 20.0 {
+            if let Some(overlord) = overlords.next() {
+                overlord.move_(loc.to_position()).ok();
+                //println!("sending overlord to scout {}", loc.to_position());
             }
         }
     }

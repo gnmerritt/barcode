@@ -70,6 +70,9 @@ impl Counts {
     pub fn supply_max(&self) -> i32 {
         self.supply_max
     }
+    pub fn supply_used(&self) -> i32 {
+        self.supply_used
+    }
     pub fn frame(&self) -> i32 {
         self.frame
     }

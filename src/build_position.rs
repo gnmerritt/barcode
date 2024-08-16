@@ -61,6 +61,9 @@ fn position_new_base(game: &Game, builder: &Unit) -> Option<TilePosition> {
         .filter(|u| u.get_type() == UnitType::Zerg_Hatchery)
         .collect();
     let bt = UnitType::Zerg_Hatchery;
+    // static geysers == all available at start of game
+    // TODO static geysers don't have real tile positions until we scout them
+    // so they aren't helpful for finding our natural
     let mut geysers = game.get_geysers();
     // sort geysers by how far they are from our hatcheries
     geysers.sort_by_cached_key(|g| hatches.iter().map(|h| g.get_distance(h)).min());
