@@ -1,6 +1,6 @@
 use crate::{
     build_order::BuildOrder, build_position::position_building, counts::Counts, gas::GasManager,
-    seen::HaveSeen,
+    seen::HaveSeen, unit_comp::UnitComp,
 };
 use rsbwapi::*;
 use std::collections::HashSet;
@@ -23,17 +23,6 @@ impl BotCallbacks {
             drone_scout_locs: vec![],
         }
     }
-}
-
-fn spawn_maybe(units: &Vec<Unit>, utype: UnitType) -> Option<UnitType> {
-    let larva = units.iter().find(|u| u.get_type() == UnitType::Zerg_Larva);
-    if let Some(larva) = larva {
-        if let Ok(true) = larva.train(utype) {
-            println!("spawning a {:?}", utype);
-            return Some(utype);
-        }
-    }
-    None
 }
 
 impl AiModule for BotCallbacks {
@@ -63,7 +52,7 @@ impl AiModule for BotCallbacks {
         let mut used_drones = HashSet::new();
 
         // place our next building
-        let next_building = self.build.get_next_building(self_.supply_used());
+        let next_building = self.build.get_next_building(&counts);
         if let Some(to_build) = next_building {
             if to_build == UnitType::Zerg_Lair || to_build == UnitType::Zerg_Hive {
                 let base = if to_build == UnitType::Zerg_Lair {
@@ -137,27 +126,25 @@ impl AiModule for BotCallbacks {
             }
         }
 
-        // make overlords and drones
-        // note: supply is doubled by BWAPI so that Zerglings can use an interger amount of supply
-        if counts.supply_used() >= counts.supply_max() - 2
-            && counts.can_afford(UnitType::Zerg_Overlord)
-        {
-            let morphing_overlord = my_units.iter().find(|u| {
-                u.get_type() == UnitType::Zerg_Egg
-                    && u.is_morphing()
-                    && u.get_build_type() == UnitType::Zerg_Overlord
-            });
-            if morphing_overlord.is_none() {
-                println!(
-                    "need an overlord {} at {}",
-                    counts.supply_string(),
-                    counts.frame()
-                );
-                spawn_maybe(&my_units, UnitType::Zerg_Overlord).map(|u| counts.bought(u));
+        let comp = UnitComp::new(game);
+        comp.spawn_units(game, &mut counts, &self.seen);
+
+        // attack with idle zerglings and mutas
+        let idle_army = my_units.iter().filter(|u| {
+            (u.get_type() == UnitType::Zerg_Zergling || u.get_type() == UnitType::Zerg_Mutalisk)
+                && u.is_idle()
+        });
+        // TODO: group up so we don't attack one by one
+        let enemy = self.seen.get_enemy_building();
+        let mut first = true;
+        for army in idle_army {
+            if let Some(enemy) = enemy {
+                if first {
+                    println!("attacking enemy {:?}", enemy);
+                    first = false;
+                }
+                army.attack(enemy.position).ok();
             }
-        }
-        if counts.can_afford(UnitType::Zerg_Drone) {
-            spawn_maybe(&my_units, UnitType::Zerg_Drone).map(|u| counts.bought(u));
         }
 
         // send out a drone to scout

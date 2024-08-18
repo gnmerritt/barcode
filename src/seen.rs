@@ -1,9 +1,25 @@
-use rsbwapi::{Game, TilePosition, Unit, UnitId, UnitType};
+use rsbwapi::{Game, ScaledPosition, TilePosition, Unit, UnitId, UnitType};
 use std::collections::{HashMap, HashSet};
 
-struct SeenUnit {
-    unit: Unit,
-    frame: i32,
+#[derive(Debug, PartialEq)]
+pub(crate) struct SeenUnit {
+    pub unit_type: UnitType,
+    pub position: ScaledPosition<1>,
+    pub hp: i32,
+    pub shields: i32,
+    pub frame: i32,
+}
+
+impl SeenUnit {
+    fn new(unit: Unit, frame: i32) -> Self {
+        SeenUnit {
+            unit_type: unit.get_type(),
+            position: unit.get_position(),
+            hp: unit.get_hit_points(),
+            shields: unit.get_shields(),
+            frame,
+        }
+    }
 }
 
 // Keep track of things we see that don't belong to us
@@ -37,12 +53,14 @@ impl HaveSeen {
             for unit in not_ours {
                 let type_ = unit.get_type();
                 match type_ {
+                    UnitType::Unknown => {}
                     UnitType::Resource_Mineral_Field => {
                         self.minerals.insert(unit.get_tile_position().clone());
                     }
                     UnitType::Resource_Vespene_Geyser => {
                         self.gas_locs.insert(unit.get_tile_position().clone());
                     }
+                    _ if type_.is_neutral() => {}
                     _ if type_.is_refinery() => {
                         self.gas_locs.insert(unit.get_tile_position().clone());
                         frame_counts
@@ -56,10 +74,10 @@ impl HaveSeen {
                             .and_modify(|c| *c += 1)
                             .or_insert(0);
                         self.buildings
-                            .insert(unit.get_id(), SeenUnit { unit, frame });
+                            .insert(unit.get_id(), SeenUnit::new(unit, frame));
                     }
                     _ => {
-                        self.units.insert(unit.get_id(), SeenUnit { unit, frame });
+                        self.units.insert(unit.get_id(), SeenUnit::new(unit, frame));
                     }
                 }
             }
@@ -79,13 +97,17 @@ impl HaveSeen {
         self.units.remove(&id);
         if let Some(b) = self.buildings.remove(&id) {
             self.building_counts
-                .entry(b.unit.get_type())
+                .entry(b.unit_type)
                 .and_modify(|c| *c -= 1);
         }
     }
 
     pub fn get_gas_locs(&self) -> Vec<&TilePosition> {
         self.gas_locs.iter().collect()
+    }
+
+    pub fn get_enemy_building(&self) -> Option<&SeenUnit> {
+        self.buildings.values().next()
     }
 }
 

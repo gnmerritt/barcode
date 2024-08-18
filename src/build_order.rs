@@ -1,3 +1,4 @@
+use crate::counts::Counts;
 use rsbwapi::*;
 use std::collections::{HashMap, HashSet};
 
@@ -43,14 +44,15 @@ impl BuildOrder {
                 BuildStep::new(UnitType::Zerg_Extractor, 9, 1),
                 BuildStep::new(UnitType::Zerg_Lair, 10, 1),
                 BuildStep::new(UnitType::Zerg_Extractor, 9, 2),
-                BuildStep::new(UnitType::Zerg_Spire, 20, 1),
+                BuildStep::new(UnitType::Zerg_Spire, 14, 1),
                 BuildStep::new(UnitType::Zerg_Hatchery, 30, 3),
                 BuildStep::new(UnitType::Zerg_Hatchery, 50, 4),
-                BuildStep::new(UnitType::Zerg_Extractor, 9, 3),
+                BuildStep::new(UnitType::Zerg_Hydralisk_Den, 40, 1),
+                BuildStep::new(UnitType::Zerg_Extractor, 50, 3),
                 BuildStep::new(UnitType::Zerg_Queens_Nest, 50, 1),
                 BuildStep::new(UnitType::Zerg_Hive, 50, 1),
-                BuildStep::new(UnitType::Zerg_Hatchery, 60, 5),
-                BuildStep::new(UnitType::Zerg_Hatchery, 60, 6),
+                BuildStep::new(UnitType::Zerg_Defiler_Mound, 50, 1),
+                BuildStep::new(UnitType::Zerg_Hatchery, 60, 9),
             ],
             building_counts: HashMap::new(),
             placed_buildings: vec![],
@@ -80,13 +82,16 @@ impl BuildOrder {
         }
     }
 
-    pub fn get_next_building(&self, supply_used: i32) -> Option<UnitType> {
+    pub fn get_next_building(&self, counts: &Counts) -> Option<UnitType> {
+        let supply_used = counts.supply_used();
         for step in self.to_build.iter() {
             let count = self.building_counts.get(&step.unit_type).unwrap_or(&0);
             if *count < step.building_type_count {
                 // remember that BW doubles supplies
                 if supply_used >= 2 * step.min_supply {
                     return Some(step.unit_type.clone());
+                } else if counts.minerals() > 1_000 {
+                    return Some(UnitType::Zerg_Hatchery);
                 } else {
                     return None;
                 }
@@ -183,16 +188,18 @@ mod test {
         // we start out with one hatch
         bo.check_placed_buildings(vec![(10, UnitType::Zerg_Hatchery)]);
 
-        assert_eq!(bo.get_next_building(8), None, "saw building too early");
+        let c = Counts::new_fake(8);
+        assert_eq!(bo.get_next_building(&c), None, "saw building too early");
+        let c = Counts::new_fake(22);
         assert_eq!(
-            bo.get_next_building(22),
+            bo.get_next_building(&c),
             Some(UnitType::Zerg_Hatchery),
             "got hatch first"
         );
         // no-op to place a building not in the order
         bo.placed_building(UnitType::Terran_Barracks);
         assert_eq!(
-            bo.get_next_building(22),
+            bo.get_next_building(&c),
             Some(UnitType::Zerg_Hatchery),
             "still got hatch"
         );
@@ -204,7 +211,7 @@ mod test {
 
         bo.placed_building(UnitType::Zerg_Hatchery);
         assert_eq!(
-            bo.get_next_building(22),
+            bo.get_next_building(&c),
             Some(UnitType::Zerg_Spawning_Pool),
             "pool after hatch"
         );

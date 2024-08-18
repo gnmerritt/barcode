@@ -30,10 +30,7 @@ impl Counts {
                     .iter()
                     .map(|u| u.get_type())
                     .filter(|t| {
-                        *t == UnitType::Zerg_Overlord
-                            || *t == UnitType::Zerg_Hatchery
-                            || *t == UnitType::Zerg_Lair
-                            || *t == UnitType::Zerg_Hive
+                        *t == UnitType::Zerg_Overlord || t.is_successor_of(UnitType::Zerg_Hatchery)
                     })
                     .map(|ut| ut.supply_provided())
                     .sum(),
@@ -43,8 +40,16 @@ impl Counts {
         c
     }
 
+    #[cfg(test)]
+    pub fn new_fake(supply_used: i32) -> Self {
+        Counts {
+            supply_used,
+            ..Default::default()
+        }
+    }
+
     pub fn supply_string(&self) -> String {
-        format!("supply {} / {}", self.supply_used, self.supply_max)
+        format!("supply {} / {}", self.supply_used / 2, self.supply_max / 2)
     }
 
     pub fn bought(&mut self, unit: UnitType) {

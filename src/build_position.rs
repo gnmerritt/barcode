@@ -110,10 +110,9 @@ fn get_hatches(game: &Game) -> Vec<Unit> {
 }
 
 fn position_near_hatch(game: &Game, checker: &dyn CanBuild) -> Option<TilePosition> {
-    println!("positioning near existing hatches");
     for hatch in get_hatches(game) {
         let hatch_pos = hatch.get_tile_position();
-        println!("looking near hatch at {}", hatch.get_tile_position());
+        // println!("looking near hatch at {}", hatch.get_tile_position());
         let near_hatch = position_near(checker, hatch_pos, false);
         if near_hatch.is_some() {
             return near_hatch;
