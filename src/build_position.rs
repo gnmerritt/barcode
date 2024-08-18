@@ -3,7 +3,6 @@ use rsbwapi::*;
 trait CanBuild {
     fn can_build_at(&self, loc: &TilePosition) -> bool;
     fn bounds(&self) -> (TilePosition, TilePosition);
-    fn width(&self) -> i32;
     fn debug_rect(&self, tl: ScaledPosition<1>, br: ScaledPosition<1>, color: Color);
 }
 
@@ -16,7 +15,7 @@ struct GameCanBuild<'a> {
 impl<'a> CanBuild for GameCanBuild<'a> {
     fn can_build_at(&self, loc: &TilePosition) -> bool {
         self.game
-            .can_build_here(self.builder, (loc.x, loc.y), self.building_type, true)
+            .can_build_here(self.builder, *loc, self.building_type, true)
             .unwrap_or(false)
     }
 
@@ -30,84 +29,92 @@ impl<'a> CanBuild for GameCanBuild<'a> {
         )
     }
 
-    fn width(&self) -> i32 {
-        self.building_type.tile_width()
-    }
-
     fn debug_rect(&self, tl: ScaledPosition<1>, br: ScaledPosition<1>, color: Color) {
         self.game.draw_box_map(tl, br, color, false);
     }
 }
 
-pub fn position_building(game: &Game, bt: UnitType, builder: &Unit) -> Option<TilePosition> {
+pub fn position_building(
+    game: &Game,
+    bt: UnitType,
+    builder: &Unit,
+    gas_locs: Vec<&TilePosition>,
+) -> Option<TilePosition> {
     let checker = GameCanBuild {
         game,
         builder,
         building_type: bt,
     };
     match bt {
-        UnitType::Zerg_Hatchery => position_new_base(game, builder),
+        UnitType::Zerg_Hatchery => position_new_base(game, builder, gas_locs),
         _ if bt.is_building() => position_near_hatch(game, &checker),
         _ => None,
     }
 }
 
-fn position_new_base(game: &Game, builder: &Unit) -> Option<TilePosition> {
-    let hatches: Vec<_> = game
-        .self_()
-        .unwrap()
-        .get_units()
-        .into_iter()
-        .filter(|u| u.get_type() == UnitType::Zerg_Hatchery)
-        .collect();
+fn position_new_base(
+    game: &Game,
+    builder: &Unit,
+    gas_locs: Vec<&TilePosition>,
+) -> Option<TilePosition> {
+    let hatches = get_hatches(game);
     let bt = UnitType::Zerg_Hatchery;
-    // static geysers == all available at start of game
-    // TODO static geysers don't have real tile positions until we scout them
-    // so they aren't helpful for finding our natural
-    let mut geysers = game.get_geysers();
     // sort geysers by how far they are from our hatcheries
-    geysers.sort_by_cached_key(|g| hatches.iter().map(|h| g.get_distance(h)).min());
+    let mut gas_locs: Vec<_> = gas_locs
+        .into_iter()
+        .map(|tp| {
+            (
+                hatches
+                    .iter()
+                    .map(|h| tp.chebyshev_distance(h.get_tile_position()))
+                    .min()
+                    .unwrap_or(999),
+                tp,
+            )
+        })
+        .collect();
+    gas_locs.sort_by_key(|(d, _tp)| *d);
     let checker = GameCanBuild {
         game,
         builder,
         building_type: bt,
     };
-    println!("PNB post-sort geysers={:?}", &geysers);
-    // assume for now that each hatch is next to a unique geyser, so those
-    // will be the closest and not where we should build the next hatch
-    //
-    // this doesn't work at the moment, also geysers go away when we build an extractor on them
-    for g in geysers {
-        let base_near_geyser = position_near(&checker, g.get_tile_position());
+    // first hatch is placed dist=5 from its geyser, so look for a geyser that
+    // is further than that to indicate it hasn't been expanded to yet
+    for (dist, g) in gas_locs {
+        if dist <= 6 {
+            continue;
+        }
+        let base_near_geyser = position_near(&checker, g.clone(), true);
         if base_near_geyser.is_some() {
             return base_near_geyser;
         }
     }
-    let near_hatch = position_near_hatch(game, &checker);
-    if near_hatch.is_some() {
-        return near_hatch;
+    position_near_hatch(game, &checker)
+}
+
+fn get_hatches(game: &Game) -> Vec<Unit> {
+    if let Some(self_) = game.self_() {
+        self_
+            .get_units()
+            .into_iter()
+            .filter(|u| {
+                // intention: hatches, lairs and hives but _not_ incomplete hatches
+                u.get_type().is_successor_of(UnitType::Zerg_Hatchery)
+                    && u.get_build_type() != UnitType::Zerg_Hatchery
+            })
+            .collect()
+    } else {
+        vec![]
     }
-    println!("positing anywhere, near hatch failed");
-    position_anywhere(&checker)
 }
 
 fn position_near_hatch(game: &Game, checker: &dyn CanBuild) -> Option<TilePosition> {
     println!("positioning near existing hatches");
-    let hatches: Vec<_> = game
-        .self_()
-        .unwrap()
-        .get_units()
-        .into_iter()
-        .filter(|u| u.get_type() == UnitType::Zerg_Hatchery)
-        .collect();
-    for hatch in hatches {
+    for hatch in get_hatches(game) {
         let hatch_pos = hatch.get_tile_position();
-        println!(
-            "looking hatch at {}, checker width={}",
-            hatch.get_tile_position(),
-            checker.width()
-        );
-        let near_hatch = position_near(checker, hatch_pos);
+        println!("looking near hatch at {}", hatch.get_tile_position());
+        let near_hatch = position_near(checker, hatch_pos, false);
         if near_hatch.is_some() {
             return near_hatch;
         }
@@ -115,25 +122,41 @@ fn position_near_hatch(game: &Game, checker: &dyn CanBuild) -> Option<TilePositi
     None
 }
 
-fn position_near(checker: &dyn CanBuild, location: TilePosition) -> Option<TilePosition> {
+fn position_near(
+    checker: &dyn CanBuild,
+    location: TilePosition,
+    closest: bool,
+) -> Option<TilePosition> {
+    let search_radius = 10; // hatch width=4, pool width=3
+    position_near_radius(checker, location, search_radius, search_radius, closest)
+}
+
+fn position_near_radius(
+    checker: &dyn CanBuild,
+    location: TilePosition,
+    search_width: i32,
+    search_height: i32,
+    closest: bool,
+) -> Option<TilePosition> {
     let TilePosition { x, y } = location;
     let (top_left, bottom_right) = checker.bounds();
 
     // search in a grid centered on the initial location
     use std::cmp::{max, min};
-    let search_radius = 3 * checker.width();
-    let tl_x = max(x - search_radius, top_left.x);
-    let tl_y = max(y - search_radius, top_left.y);
-    let br_x = min(x + search_radius, bottom_right.x);
-    let br_y = min(y + search_radius, bottom_right.y);
+    let tl_x = max(x - search_width, top_left.x);
+    let tl_y = max(y - search_width, top_left.y);
+    let br_x = min(x + search_height, bottom_right.x);
+    let br_y = min(y + search_height, bottom_right.y);
 
     let tl = TilePosition { x: tl_x, y: tl_y }.to_position();
     let br = TilePosition { x: br_x, y: br_y }.to_position();
     checker.debug_rect(tl, br, Color::Red);
 
     let mut matches = building_pos_search(tl_x, br_x, tl_y, br_y, checker);
-    matches.sort_by_cached_key(|bl| bl.chebyshev_distance(location));
-    return matches.into_iter().next();
+    if closest {
+        matches.sort_by_cached_key(|bl| (bl.distance(location) * 1000.0) as i32);
+    }
+    return matches.into_iter().filter(|m| *m != location).next();
 }
 
 #[allow(dead_code)]
@@ -186,9 +209,6 @@ mod test {
         fn bounds(&self) -> (TilePosition, TilePosition) {
             (TilePosition { x: 0, y: 0 }, TilePosition { x: 100, y: 100 })
         }
-        fn width(&self) -> i32 {
-            1
-        }
         fn debug_rect(
             &self,
             tl: rsbwapi::ScaledPosition<1>,
@@ -239,21 +259,41 @@ mod test {
     #[test]
     fn test_find_near_loc() {
         let wanted = TilePosition { x: 49, y: 49 };
-        let checker = FakeChecker {
-            allowed: vec![wanted.clone(), TilePosition { x: 80, y: 80 }],
-        };
+        let other = TilePosition { x: 44, y: 48 };
         let near_loc = TilePosition { x: 50, y: 50 };
+
+        let checker = FakeChecker {
+            allowed: vec![other.clone(), wanted.clone(), TilePosition { x: 80, y: 80 }],
+        };
         assert_eq!(
-            position_near(&checker, near_loc),
+            position_near(&checker, near_loc, true),
             Some(wanted),
+            "find closest failed"
+        );
+        assert_eq!(
+            position_near(&checker, near_loc, false),
+            Some(other),
             "find near failed"
         );
 
         let no_match = TilePosition { x: 100, y: 100 };
         assert_eq!(
-            position_near(&checker, no_match),
+            position_near(&checker, no_match, true),
             None,
             "find near unexpected match"
+        );
+    }
+
+    #[test]
+    fn test_find_near_dont_return_given_loc() {
+        let near_loc = TilePosition { x: 50, y: 50 };
+        let checker = FakeChecker {
+            allowed: vec![near_loc],
+        };
+        assert_eq!(
+            position_near(&checker, near_loc, true),
+            None,
+            "returned the given query loc"
         );
     }
 }

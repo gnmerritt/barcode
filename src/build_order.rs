@@ -49,8 +49,8 @@ impl BuildOrder {
                 BuildStep::new(UnitType::Zerg_Extractor, 9, 3),
                 BuildStep::new(UnitType::Zerg_Queens_Nest, 50, 1),
                 BuildStep::new(UnitType::Zerg_Hive, 50, 1),
-                BuildStep::new(UnitType::Zerg_Hatchery, 70, 5),
-                BuildStep::new(UnitType::Zerg_Hatchery, 90, 6),
+                BuildStep::new(UnitType::Zerg_Hatchery, 60, 5),
+                BuildStep::new(UnitType::Zerg_Hatchery, 60, 6),
             ],
             building_counts: HashMap::new(),
             placed_buildings: vec![],
@@ -64,8 +64,17 @@ impl BuildOrder {
             let buildings = self_
                 .get_units()
                 .into_iter()
-                .filter(|u| u.get_type().is_building())
-                .map(|u| (u.get_id(), u.get_type()))
+                .filter(|u| {
+                    u.get_type().is_building()
+                        || (u.is_morphing() && u.get_build_type().is_building())
+                })
+                .map(|u| {
+                    if u.get_type().is_building() {
+                        (u.get_id(), u.get_type())
+                    } else {
+                        (u.get_id(), u.get_build_type())
+                    }
+                })
                 .collect();
             self.check_placed_buildings(buildings);
         }
@@ -107,7 +116,7 @@ impl BuildOrder {
 
     // remove buildings that have begun construction from our placed list
     // so we don't double-count their cost
-    fn check_placed_buildings(&mut self, buildings: Vec<(usize, UnitType)>) {
+    fn check_placed_buildings(&mut self, buildings: Vec<(UnitId, UnitType)>) {
         self.building_counts.clear();
 
         for (id, bt) in buildings {
@@ -116,20 +125,29 @@ impl BuildOrder {
             // if this is the first frame they've existed make sure to remove
             // them from the placed buildings list
             if !self.building_ids.contains(&id) {
+                println!(
+                    "saw new building of {:?}, placed={:?}",
+                    bt, self.placed_buildings
+                );
                 self.building_ids.insert(id);
                 let index = self
                     .placed_buildings
                     .iter()
                     .position(|t| t.building_type == bt);
                 if let Some(index) = index {
-                    self.placed_buildings.swap_remove(index);
+                    let pb = self.placed_buildings.swap_remove(index);
+                    println!(
+                        "{:?} started after {} frames",
+                        pb,
+                        self.frame - pb.placed_frame
+                    );
                 }
             }
         }
-        // stop tracking placed builings after 150 frames
+        // stop tracking placed builings after 200 frames
         // TODO replace with watching the drone's id
         self.placed_buildings
-            .retain(|pb| pb.placed_frame + 150 > self.frame);
+            .retain(|pb| pb.placed_frame + 200 > self.frame);
         // count placed buildings too
         for pb in self.placed_buildings.iter() {
             // replacing this with the method angers the borrow checker :-(

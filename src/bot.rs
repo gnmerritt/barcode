@@ -1,13 +1,16 @@
 use crate::{
     build_order::BuildOrder, build_position::position_building, counts::Counts, gas::GasManager,
+    seen::HaveSeen,
 };
 use rsbwapi::*;
+use std::collections::HashSet;
 
 pub struct BotCallbacks {
     build: BuildOrder,
     gasses: GasManager,
-    drone_scout_id: Option<usize>,
+    drone_scout_id: Option<UnitId>,
     drone_scout_locs: Vec<TilePosition>,
+    seen: HaveSeen,
 }
 
 impl BotCallbacks {
@@ -15,6 +18,7 @@ impl BotCallbacks {
         BotCallbacks {
             build: BuildOrder::new(),
             gasses: GasManager::new(),
+            seen: HaveSeen::new(),
             drone_scout_id: None,
             drone_scout_locs: vec![],
         }
@@ -44,12 +48,19 @@ impl AiModule for BotCallbacks {
         */
     }
 
+    fn on_unit_destroy(&mut self, _game: &Game, unit: Unit) {
+        self.seen.on_unit_destroy(unit.get_id());
+    }
+
     fn on_frame(&mut self, game: &Game) {
         self.gasses.on_frame(game);
         self.build.on_frame(game);
+        self.seen.on_frame(game);
         let mut counts = Counts::new(game, &self.build);
+
         let self_ = game.self_().unwrap();
         let my_units = self_.get_units();
+        let mut used_drones = HashSet::new();
 
         // place our next building
         let next_building = self.build.get_next_building(self_.supply_used());
@@ -63,38 +74,59 @@ impl AiModule for BotCallbacks {
                 if let Some(to_upgrade) = my_units.iter().find(|u| u.get_type() == base) {
                     if let Ok(true) = to_upgrade.morph(to_build) {
                         println!("morphed a {:?}", to_build);
-                        counts.bought(to_build);
                         self.build.placed_building(to_build);
                     }
                 }
             }
-            if counts.can_afford(to_build) {
-                let builder_drone = my_units
-                    .iter()
-                    .find(|u| u.get_type() == UnitType::Zerg_Drone && !u.is_idle());
-                println!("found drone to build {:?}", to_build);
-                if let Some(builder_drone) = builder_drone {
-                    if let Some(tp) = position_building(game, to_build, builder_drone) {
+            // TODO this feels cludgy and will only get worse as we do more things
+            let builder_drone = my_units.iter().find(|u| {
+                u.get_type() == UnitType::Zerg_Drone
+                    && !u.is_morphing()
+                    && u.get_order() != Order::PlaceBuilding
+                    && u.is_interruptible()
+                    && Some(u.get_id()) != self.drone_scout_id
+            });
+            if let Some(builder_drone) = builder_drone {
+                if let Some(tp) =
+                    position_building(game, to_build, builder_drone, self.seen.get_gas_locs())
+                {
+                    used_drones.insert(builder_drone.get_id());
+                    game.draw_box_map(
+                        tp.to_position(),
+                        (tp + to_build.tile_width()).to_position(),
+                        Color::White,
+                        false,
+                    );
+                    if counts.can_afford(to_build) {
                         println!("placing a {:?} at {:?}", to_build, tp);
+
                         let res = builder_drone.build(to_build, tp);
                         if let Ok(true) = res {
                             self.build.placed_building(to_build);
                         } else {
-                            println!("placing {:?} failed: {:?}", to_build, res);
-                            builder_drone.move_(tp.to_position()).ok();
+                            println!(
+                                "placing {:?} failed: {:?} - {:?}",
+                                to_build,
+                                res,
+                                builder_drone.get_order()
+                            );
                         }
+                    } else {
+                        builder_drone.move_(tp.to_position()).ok();
                     }
-                    // buildings spend when they start, don't spend the building's
-                    // money on units in the meantime
-                    counts.bought(to_build);
                 }
             }
+            // buildings spend when they start, don't spend the building's
+            // money on units in the meantime
+            counts.bought(to_build);
         }
 
         // assign idle workers to mine minerals
-        let mut idle_workers = my_units
-            .iter()
-            .filter(|u| u.get_type() == UnitType::Zerg_Drone && u.is_idle());
+        let mut idle_workers = my_units.iter().filter(|u| {
+            u.get_type() == UnitType::Zerg_Drone
+                && u.is_idle()
+                && !used_drones.contains(&u.get_id())
+        });
         let minerals = game.get_all_units().into_iter().filter(|u| {
             u.get_type().is_mineral_field() && u.is_visible() && !u.is_being_gathered()
         });
@@ -130,9 +162,11 @@ impl AiModule for BotCallbacks {
 
         // send out a drone to scout
         if counts.supply_used() >= 20 && self.drone_scout_id.is_none() {
-            let drone = my_units
-                .iter()
-                .find(|u| u.get_type() == UnitType::Zerg_Drone && !u.is_morphing());
+            let drone = my_units.iter().find(|u| {
+                u.get_type() == UnitType::Zerg_Drone
+                    && !u.is_morphing()
+                    && !used_drones.contains(&u.get_id())
+            });
             if let Some(drone) = drone {
                 println!("assigned a drone scout {:?}", drone);
                 drone.stop().ok();
