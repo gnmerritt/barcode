@@ -73,7 +73,7 @@ impl UnitComp {
                     spawn_maybe(counts, larva.next(), UnitType::Zerg_Overlord);
                 }
             }
-            
+
             // TODO:
             // link units to tech structures
             // make declarative rather than list of spawn statements

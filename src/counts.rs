@@ -40,7 +40,6 @@ impl Counts {
         c
     }
 
-    #[cfg(test)]
     pub fn new_fake(supply_used: i32) -> Self {
         Counts {
             supply_used,
