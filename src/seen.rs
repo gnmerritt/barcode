@@ -1,4 +1,4 @@
-use rsbwapi::{Game, ScaledPosition, TilePosition, Unit, UnitId, UnitType};
+use rsbwapi::{Game, ScaledPosition, TilePosition, Unit, UnitId, UnitSizeType, UnitType};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, PartialEq)]
@@ -42,53 +42,41 @@ impl HaveSeen {
         }
     }
 
-    pub fn on_frame(&mut self, game: &Game) {
+    pub fn on_frame(&mut self, _game: &Game) {
+        // TODO: update frame counts
+    }
+
+    pub fn on_unit_discover(&mut self, game: &Game, unit: Unit) {
         if let Some(self_) = game.self_() {
+            let enemy = game.enemy();
+            if unit.get_player() == self_ {
+                return;
+            }
             let frame = game.get_frame_count();
-            let not_ours = game
-                .get_all_units()
-                .into_iter()
-                .filter(|u| self_ != u.get_player());
-            let mut frame_counts = HashMap::new();
-            for unit in not_ours {
-                let type_ = unit.get_type();
-                match type_ {
-                    UnitType::Unknown => {}
-                    UnitType::Resource_Mineral_Field => {
-                        self.minerals.insert(unit.get_tile_position().clone());
-                    }
-                    UnitType::Resource_Vespene_Geyser => {
-                        self.gas_locs.insert(unit.get_tile_position().clone());
-                    }
-                    _ if type_.is_neutral() => {}
-                    _ if type_.is_refinery() => {
-                        self.gas_locs.insert(unit.get_tile_position().clone());
-                        frame_counts
-                            .entry(type_)
-                            .and_modify(|c| *c += 1)
-                            .or_insert(0);
-                    }
-                    _ if type_.is_building() => {
-                        frame_counts
-                            .entry(type_)
-                            .and_modify(|c| *c += 1)
-                            .or_insert(0);
+            let type_ = unit.get_type();
+            match type_ {
+                UnitType::Unknown => {}
+                _ if type_.is_mineral_field() => {
+                    self.minerals.insert(unit.get_tile_position().clone());
+                }
+                UnitType::Resource_Vespene_Geyser => {
+                    self.gas_locs.insert(unit.get_tile_position().clone());
+                }
+                _ if type_.is_neutral() => {}
+                _ if type_.is_refinery() => {
+                    self.gas_locs.insert(unit.get_tile_position().clone());
+                }
+                _ if type_.is_building() => {
+                    if Some(unit.get_player()) == enemy {
                         self.buildings
                             .insert(unit.get_id(), SeenUnit::new(unit, frame));
                     }
-                    _ => {
+                }
+                _ => {
+                    if Some(unit.get_player()) == enemy {
                         self.units.insert(unit.get_id(), SeenUnit::new(unit, frame));
                     }
                 }
-            }
-            // update the saved counts iff we saw more of a unit type in this frame
-            // than we have before.
-            // TODO: do this better with unit ids?
-            for (k, v) in frame_counts.into_iter() {
-                self.building_counts
-                    .entry(k)
-                    .and_modify(|c| *c = std::cmp::max(*c, v))
-                    .or_insert(v);
             }
         }
     }
@@ -104,6 +92,10 @@ impl HaveSeen {
 
     pub fn get_gas_locs(&self) -> Vec<&TilePosition> {
         self.gas_locs.iter().collect()
+    }
+
+    pub fn get_mineral_locs(&self) -> Vec<&TilePosition> {
+        self.minerals.iter().collect()
     }
 
     pub fn get_enemy_building(&self) -> Option<&SeenUnit> {

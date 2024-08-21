@@ -1,6 +1,6 @@
 use crate::{
     build_order::BuildOrder, build_position::position_building, counts::Counts, gas::GasManager,
-    seen::HaveSeen, unit_comp::UnitComp,
+    scouting::Scout, seen::HaveSeen, unit_comp::UnitComp,
 };
 use rsbwapi::*;
 use std::collections::HashSet;
@@ -8,8 +8,7 @@ use std::collections::HashSet;
 pub struct BotCallbacks {
     build: BuildOrder,
     gasses: GasManager,
-    drone_scout_id: Option<UnitId>,
-    drone_scout_locs: Vec<TilePosition>,
+    drone_scout: Option<Scout>,
     seen: HaveSeen,
     counts: Counts,
     enemy_race: Race,
@@ -22,8 +21,7 @@ impl BotCallbacks {
             gasses: GasManager::new(),
             seen: HaveSeen::new(),
             counts: Counts::new_fake(0),
-            drone_scout_id: None,
-            drone_scout_locs: vec![],
+            drone_scout: None,
             enemy_race: Race::Random,
         }
     }
@@ -50,16 +48,14 @@ impl BotCallbacks {
                 && !u.is_morphing()
                 && u.get_order() != Order::PlaceBuilding
                 && u.is_interruptible()
-                && Some(u.get_id()) != self.drone_scout_id
+                && Some(u.get_id()) != self.drone_scout.as_ref().map(|d| d.get_id())
         });
         if let Some(builder_drone) = builder_drone {
-            if let Some(tp) =
-                position_building(game, to_build, builder_drone, self.seen.get_gas_locs())
-            {
+            if let Some(tp) = position_building(game, to_build, builder_drone, &self.seen) {
                 used_drones.insert(builder_drone.get_id());
                 game.draw_box_map(
                     tp.to_position(),
-                    (tp + to_build.tile_width()).to_position(),
+                    (tp + to_build.tile_size()).to_position(),
                     Color::White,
                     false,
                 );
@@ -114,7 +110,7 @@ impl BotCallbacks {
             Race::Random => 14,
             _ => 20,
         };
-        if self.counts.supply_used() >= scout_timing && self.drone_scout_id.is_none() {
+        if self.counts.supply_used() >= scout_timing && self.drone_scout.is_none() {
             let drone = my_units.iter().find(|u| {
                 u.get_type() == UnitType::Zerg_Drone
                     && !u.is_morphing()
@@ -123,23 +119,19 @@ impl BotCallbacks {
             if let Some(drone) = drone {
                 println!("assigned a drone scout {:?}", drone);
                 drone.stop().ok();
-                self.drone_scout_id = Some(drone.get_id());
+                let mut scout = Scout::new(drone.to_owned());
                 for s in game.get_start_locations() {
-                    self.drone_scout_locs.push(s);
+                    scout.go_later(s);
                 }
+                self.drone_scout = Some(scout);
             }
         }
-        if let Some(scout) = self.drone_scout_id.map(|id| game.get_unit(id)).flatten() {
-            if scout.exists() && scout.get_type() == UnitType::Zerg_Drone {
-                if scout.is_idle() {
-                    if let Some(next_loc) = self.drone_scout_locs.pop() {
-                        println!("sending scout {} to {}", scout.get_id(), next_loc);
-                        scout.move_(next_loc.to_position()).ok();
-                    }
-                }
+        if let Some(scout) = &mut self.drone_scout {
+            if scout.is_alive() {
+                scout.on_frame();
             } else {
                 println!("need a new scout");
-                self.drone_scout_id = None; // RIP drone, assign a new one
+                self.drone_scout = None; // RIP drone, assign a new one
             }
         }
     }
@@ -152,6 +144,15 @@ impl AiModule for BotCallbacks {
 
     fn on_unit_create(&mut self, _game: &Game, _unit: Unit) {
         // note: this seems to only fire for larva and not when they finish morphing
+    }
+
+    fn on_unit_discover(&mut self, game: &Game, unit: Unit) {
+        println!(
+            "discovered a {:?} at {}",
+            unit.get_type(),
+            unit.get_tile_position()
+        );
+        self.seen.on_unit_discover(game, unit);
     }
 
     fn on_unit_destroy(&mut self, _game: &Game, unit: Unit) {
