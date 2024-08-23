@@ -1,4 +1,4 @@
-use rsbwapi::{Game, ScaledPosition, TilePosition, Unit, UnitId, UnitSizeType, UnitType};
+use rsbwapi::{Game, ScaledPosition, TilePosition, Unit, UnitId, UnitType};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, PartialEq)]
@@ -11,7 +11,7 @@ pub(crate) struct SeenUnit {
 }
 
 impl SeenUnit {
-    fn new(unit: Unit, frame: i32) -> Self {
+    fn new(unit: &Unit, frame: i32) -> Self {
         SeenUnit {
             unit_type: unit.get_type(),
             position: unit.get_position(),
@@ -46,7 +46,7 @@ impl HaveSeen {
         // TODO: update frame counts
     }
 
-    pub fn on_unit_discover(&mut self, game: &Game, unit: Unit) {
+    pub fn on_unit_discover(&mut self, game: &Game, unit: &Unit) {
         if let Some(self_) = game.self_() {
             let enemy = game.enemy();
             if unit.get_player() == self_ {

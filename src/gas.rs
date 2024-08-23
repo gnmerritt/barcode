@@ -1,6 +1,8 @@
 use rsbwapi::*;
 use std::collections::{HashMap, HashSet};
 
+use crate::drones::{DroneManager, DroneRole};
+
 const DRONES_PER_GAS: usize = 3;
 
 struct MiningGas {
@@ -16,7 +18,7 @@ impl MiningGas {
         }
     }
 
-    fn ensure_mining(&mut self, game: &Game) {
+    fn ensure_mining(&mut self, drones: &mut DroneManager) {
         let living_drones: HashSet<_> = self
             .drones
             .iter()
@@ -28,23 +30,13 @@ impl MiningGas {
             return;
         }
         println!("gas {:?} needs {} more drones", self.gas, needed_drones);
-        if let Some(self_) = game.self_() {
-            let mut drones: Vec<_> = self_
-                .get_units()
-                .into_iter()
-                .filter(|u| {
-                    u.get_type() == UnitType::Zerg_Drone
-                        && !living_drones.contains(&u.get_id())
-                        && u.is_interruptible()
-                })
-                .collect();
-            drones.sort_by_cached_key(|d| self.gas.get_distance(d));
-            for d in drones.into_iter().take(needed_drones) {
-                let r = d.gather(&self.gas);
-                if let Ok(true) = r {
-                    self.drones.push(d);
-                } else {
-                    println!("couldn't mine gas with drone {}: {:?}", d.get_id(), r);
+
+        for _ in 0..needed_drones {
+            if let Some(d) = drones.grab_and_assign(DroneRole::Gas) {
+                let res = d.gather(&self.gas);
+                match res {
+                    Ok(true) => self.drones.push(d),
+                    _ => println!("couldn't mine gas with drone {}: {:?}", d.get_id(), res),
                 }
             }
         }
@@ -62,7 +54,7 @@ impl GasManager {
         }
     }
 
-    pub fn on_frame(&mut self, game: &Game) {
+    pub fn on_frame(&mut self, game: &Game, drones: &mut DroneManager) {
         if let Some(self_) = game.self_() {
             let mining_gasses: Vec<_> = self_
                 .get_units()
@@ -77,7 +69,7 @@ impl GasManager {
             self.gasses.clear();
 
             for mut mg in mining_gasses {
-                mg.ensure_mining(game);
+                mg.ensure_mining(drones);
                 self.gasses.insert(mg.gas.get_id(), mg);
             }
         }

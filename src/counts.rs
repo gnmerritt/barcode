@@ -56,6 +56,7 @@ impl Counts {
         self.gas -= unit.gas_price();
     }
 
+    #[allow(unused)]
     pub fn spent(&mut self, minerals: i32, gas: i32) {
         self.minerals -= minerals;
         self.gas -= gas;

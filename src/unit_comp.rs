@@ -10,7 +10,12 @@ pub(crate) struct UnitComp {
 fn spawn_maybe(counts: &mut Counts, larva: Option<Unit>, utype: UnitType) -> Option<UnitType> {
     if let Some(larva) = larva {
         if let Ok(true) = larva.train(utype) {
-            println!("spawning a {:?} at {}", utype, counts.supply_string());
+            println!(
+                "frame {} :: spawning a {:?} at {}",
+                counts.frame(),
+                utype,
+                counts.supply_string()
+            );
             counts.bought(utype);
             return Some(utype);
         }

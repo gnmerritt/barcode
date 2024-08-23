@@ -4,7 +4,9 @@ use rsbwapi::*;
 trait CanBuild {
     fn can_build_at(&self, loc: TilePosition) -> bool;
     fn bounds(&self) -> (TilePosition, TilePosition);
+    #[allow(unused)]
     fn width(&self) -> i32;
+    #[allow(unused)]
     fn height(&self) -> i32;
     fn debug_rect(&self, tl: ScaledPosition<1>, br: ScaledPosition<1>, color: Color);
 }

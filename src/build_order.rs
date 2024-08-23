@@ -149,10 +149,10 @@ impl BuildOrder {
                 }
             }
         }
-        // stop tracking placed builings after 200 frames
+        // stop tracking placed builings after 150 frames
         // TODO replace with watching the drone's id
         self.placed_buildings
-            .retain(|pb| pb.placed_frame + 200 > self.frame);
+            .retain(|pb| pb.placed_frame + 150 > self.frame);
         // count placed buildings too
         for pb in self.placed_buildings.iter() {
             // replacing this with the method angers the borrow checker :-(
