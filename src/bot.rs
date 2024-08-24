@@ -162,7 +162,7 @@ impl AiModule for BotCallbacks {
         self.seen.on_frame(game);
         self.counts = Counts::new(game, &self.build);
         self.drones.print_stats(self.counts.frame());
-        self.gasses.on_frame(game, &mut self.drones);
+        self.gasses.on_frame(game, &self.counts, &mut self.drones);
 
         let self_ = game.self_().unwrap();
         let my_units = self_.get_units();

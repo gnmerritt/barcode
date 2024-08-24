@@ -1,9 +1,12 @@
 use rsbwapi::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use crate::drones::{DroneManager, DroneRole};
+use crate::{
+    counts::Counts,
+    drones::{DroneManager, DroneRole},
+};
 
-const DRONES_PER_GAS: usize = 3;
+const MAX_DRONES_PER_GAS: i8 = 3;
 
 struct MiningGas {
     drones: Vec<Unit>,
@@ -18,27 +21,38 @@ impl MiningGas {
         }
     }
 
-    fn ensure_mining(&mut self, drones: &mut DroneManager) {
-        let living_drones: HashSet<_> = self
+    fn ensure_mining(&mut self, drones: &mut DroneManager, mining_count: i8) {
+        let living_drone_count = self
             .drones
             .iter()
             .filter(|u| u.exists() && u.get_type() == UnitType::Zerg_Drone)
-            .map(|u| u.get_id())
-            .collect();
-        let needed_drones = DRONES_PER_GAS - living_drones.len();
-        if needed_drones == 0 {
-            return;
-        }
-        println!("gas {:?} needs {} more drones", self.gas, needed_drones);
+            .count();
 
-        for _ in 0..needed_drones {
-            if let Some(d) = drones.grab_and_assign(DroneRole::Gas) {
-                let res = d.gather(&self.gas);
-                match res {
-                    Ok(true) => self.drones.push(d),
-                    _ => println!("couldn't mine gas with drone {}: {:?}", d.get_id(), res),
+        let needed_drones = mining_count - living_drone_count as i8;
+        match needed_drones {
+            _ if needed_drones < 0 => {
+                println!(
+                    "gas {:?} has too many drones, releasing {}",
+                    self.gas, needed_drones
+                );
+                if let Some(to_release) = self.drones.pop() {
+                    to_release.return_cargo().ok();
+                    drones.idle(to_release.get_id());
                 }
             }
+            _ if needed_drones > 0 => {
+                println!("gas {:?} needs {} more drones", self.gas, needed_drones);
+                for _ in 0..needed_drones {
+                    if let Some(d) = drones.grab_and_assign(DroneRole::Gas) {
+                        let res = d.gather(&self.gas);
+                        match res {
+                            Ok(true) => self.drones.push(d),
+                            _ => println!("couldn't mine gas with drone {}: {:?}", d.get_id(), res),
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -54,7 +68,20 @@ impl GasManager {
         }
     }
 
-    pub fn on_frame(&mut self, game: &Game, drones: &mut DroneManager) {
+    fn get_drones_per_gas(&self, counts: &Counts, drones: &DroneManager) -> i8 {
+        let on_mins = drones.count_role(&DroneRole::Minerals);
+        if counts.gas() > 1_000 && counts.minerals() < 500 {
+            if on_mins < 12 {
+                return 1;
+            }
+            if on_mins < 24 {
+                return 2;
+            }
+        }
+        MAX_DRONES_PER_GAS
+    }
+
+    pub fn on_frame(&mut self, game: &Game, counts: &Counts, drones: &mut DroneManager) {
         if let Some(self_) = game.self_() {
             let mining_gasses: Vec<_> = self_
                 .get_units()
@@ -68,8 +95,9 @@ impl GasManager {
                 .collect();
             self.gasses.clear();
 
+            let dpg = self.get_drones_per_gas(counts, drones);
             for mut mg in mining_gasses {
-                mg.ensure_mining(drones);
+                mg.ensure_mining(drones, dpg);
                 self.gasses.insert(mg.gas.get_id(), mg);
             }
         }

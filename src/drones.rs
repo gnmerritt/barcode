@@ -101,6 +101,12 @@ impl DroneManager {
         }
     }
 
+    pub fn idle(&mut self, id: UnitId) {
+        if self.by_id.contains_key(&id) {
+            self.reassign(id, DroneRole::Idle);
+        }
+    }
+
     fn reassign(&mut self, id: UnitId, role: DroneRole) {
         self.by_id.entry(id).and_modify(|dar| {
             let mut role = role.clone();
@@ -118,6 +124,10 @@ impl DroneManager {
             .entry(role.clone())
             .or_insert_with(HashSet::new)
             .insert(id);
+    }
+
+    pub fn count_role(&self, role: &DroneRole) -> usize {
+        self.by_roles.get(role).map_or(0, HashSet::len)
     }
 
     pub fn print_stats(&self, frame: i32) {
