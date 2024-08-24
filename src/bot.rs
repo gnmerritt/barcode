@@ -45,11 +45,6 @@ impl BotCallbacks {
     }
 
     fn build_new_building(&mut self, game: &Game, to_build: UnitType) {
-        if let Some(drone) = self.drone_builder.as_ref() {
-            if drone.is_morphing() {
-                self.drone_builder = None;
-            }
-        }
         if self.drone_builder.is_none() {
             self.drone_builder = self.drones.grab_and_assign(DroneRole::Builder);
             println!("after grabbing a builder drone: {:?}", self.drone_builder);
@@ -68,7 +63,9 @@ impl BotCallbacks {
 
                     let res = builder_drone.build(to_build, tp);
                     if let Ok(true) = res {
-                        self.build.placed_building(to_build);
+                        self.build
+                            .placed_building(to_build, Some(builder_drone.clone()));
+                        self.drone_builder = None;
                     } else {
                         println!(
                             "placing {:?} failed: {:?} - {:?}",
@@ -99,7 +96,7 @@ impl BotCallbacks {
         if let Some(to_upgrade) = my_units.iter().find(|u| u.get_type() == predecessor) {
             if let Ok(true) = to_upgrade.morph(to_build) {
                 println!("morphed a {:?}", to_build);
-                self.build.placed_building(to_build);
+                self.build.upgraded_building(to_build);
             }
             // set aside money for the upgrade whether it built or not
             self.counts.bought(to_build);
@@ -111,6 +108,7 @@ impl BotCallbacks {
             Race::Random => 14,
             _ => 24,
         };
+        // TODO: this supply used number seems to be buggy (too high)
         if self.counts.supply_used() >= scout_timing && self.drone_scout.is_none() {
             let drone = self.drones.grab_and_assign(DroneRole::Scout);
             if let Some(drone) = drone {

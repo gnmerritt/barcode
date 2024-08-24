@@ -23,6 +23,7 @@ impl BuildStep {
 struct PlacedBuilding {
     placed_frame: i32,
     building_type: UnitType,
+    builder: Option<Unit>,
 }
 
 pub struct BuildOrder {
@@ -104,12 +105,17 @@ impl BuildOrder {
      * Keep track of buildings that have been placed but the drone may not have
      * started morphing yet
      */
-    pub fn placed_building(&mut self, building_type: UnitType) {
+    pub fn placed_building(&mut self, building_type: UnitType, builder: Option<Unit>) {
         self.placed_buildings.push(PlacedBuilding {
             building_type,
+            builder,
             placed_frame: self.frame,
         });
         self.count_type(building_type);
+    }
+
+    pub fn upgraded_building(&mut self, building_type: UnitType) {
+        self.placed_building(building_type, None)
     }
 
     fn count_type(&mut self, building_type: UnitType) {
@@ -149,17 +155,49 @@ impl BuildOrder {
                 }
             }
         }
+
         // stop tracking placed builings after 150 frames
         // TODO replace with watching the drone's id
-        self.placed_buildings
-            .retain(|pb| pb.placed_frame + 150 > self.frame);
-        // count placed buildings too
-        for pb in self.placed_buildings.iter() {
+        //        self.placed_buildings
+        //          .retain(|pb| pb.placed_frame + 150 > self.frame);
+
+        let mut failed_to_build = vec![];
+        for (i, pb) in self.placed_buildings.iter().enumerate() {
+            let mut failed = false;
+            if let Some(builder) = pb.builder.as_ref() {
+                if !builder.exists() {
+                    println!(
+                        "frame {} :: {:?} failed to build, builder died",
+                        self.frame, pb.building_type
+                    );
+                    failed = true;
+                }
+                // TODO: similar check for building upgrades if we see them fail?
+                if self.frame > pb.placed_frame + 10 && builder.is_idle() {
+                    println!(
+                        "frame {} :: {:?} has failed to build after {} frames",
+                        self.frame,
+                        pb.building_type,
+                        self.frame - pb.placed_frame
+                    );
+                    failed = true;
+                }
+            }
+
+            if failed {
+                failed_to_build.push(i);
+                continue;
+            }
+
+            // count placed buildings in our builder too
             // replacing this with the method angers the borrow checker :-(
             self.building_counts
                 .entry(pb.building_type)
                 .and_modify(|c| *c += 1)
                 .or_insert(1);
+        }
+        for i in failed_to_build {
+            self.placed_buildings.swap_remove(i);
         }
     }
 
@@ -197,7 +235,7 @@ mod test {
             "got hatch first"
         );
         // no-op to place a building not in the order
-        bo.placed_building(UnitType::Terran_Barracks);
+        bo.placed_building(UnitType::Terran_Barracks, None);
         assert_eq!(
             bo.get_next_building(&c),
             Some(UnitType::Zerg_Hatchery),
@@ -209,7 +247,7 @@ mod test {
             "barracks mineral price accounted for if we say we placed it"
         );
 
-        bo.placed_building(UnitType::Zerg_Hatchery);
+        bo.placed_building(UnitType::Zerg_Hatchery, None);
         assert_eq!(
             bo.get_next_building(&c),
             Some(UnitType::Zerg_Spawning_Pool),
@@ -220,7 +258,7 @@ mod test {
     #[test]
     fn test_spent_resources() {
         let mut bo = BuildOrder::new();
-        bo.placed_building(UnitType::Zerg_Spire);
+        bo.placed_building(UnitType::Zerg_Spire, None);
         assert_eq!(bo.spent_minerals(), UnitType::Zerg_Spire.mineral_price());
         assert_eq!(bo.spent_gas(), UnitType::Zerg_Spire.gas_price());
     }
