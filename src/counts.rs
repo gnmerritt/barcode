@@ -17,9 +17,9 @@ impl Counts {
     pub fn new(game: &Game, build_order: &BuildOrder) -> Self {
         use std::cmp::max;
         let mut c = Counts {
+            frame: game.get_frame_count(),
             ..Default::default()
         };
-        c.frame = game.get_frame_count();
         if let Some(self_) = game.self_() {
             c.minerals = self_.minerals() - build_order.spent_minerals();
             c.gas = self_.gas() - build_order.spent_gas();

@@ -1,4 +1,4 @@
-use rsbwapi::{TilePosition, Unit, UnitType};
+use rsbwapi::{TilePosition, Unit, UnitId, UnitType};
 use std::collections::VecDeque;
 
 pub(crate) struct Scout {
@@ -18,6 +18,14 @@ impl Scout {
 
     pub fn is_alive(&self) -> bool {
         self.unit.exists() && self.unit.get_type() == UnitType::Zerg_Drone
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.destinations.is_empty() && self.current_destination.is_none() && self.unit.is_idle()
+    }
+
+    pub fn get_id(&self) -> UnitId {
+        self.unit.get_id()
     }
 
     pub fn on_frame(&mut self) {

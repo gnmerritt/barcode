@@ -97,17 +97,23 @@ fn position_new_base(game: &Game, builder: &Unit, seen: &HaveSeen) -> Option<Til
         if dist <= 7 {
             continue;
         }
-        let mut mins_near_gas: Vec<&TilePosition> = mineral_locs
+        let mut mins_near_gas: Vec<TilePosition> = mineral_locs
             .iter()
-            .filter(|m| m.chebyshev_distance(*gas) < 15)
-            .map(|p| *p)
+            .filter(|m| m.chebyshev_distance(*gas) < 12)
+            .map(|p| (*p).clone())
             .collect();
-        mins_near_gas.push(&gas);
-        let center_mins = cartesian_center(&mins_near_gas).expect("gas locs always present");
+        mins_near_gas.push(gas.clone());
+        let center_mins_gas = cartesian_center(&mins_near_gas).expect("gas locs always present");
+
+        checker.debug_rect(
+            center_mins_gas.to_position(),
+            (center_mins_gas + TilePosition { x: 1, y: 1 }).to_position(),
+            Color::Orange,
+        );
 
         // be near the gas & also the average position of the mins
-        let locs = vec![&gas, &center_mins];
-        let base_near_geyser = position_near_radius(&checker, &center_mins, &locs, 7, 7, true);
+        let locs = vec![&gas, &center_mins_gas];
+        let base_near_geyser = position_near_radius(&checker, &center_mins_gas, &locs, 7, 7, true);
         if base_near_geyser.is_some() {
             return base_near_geyser;
         }
@@ -191,6 +197,17 @@ fn position_near_radius(
                 .collect::<Vec<u32>>()
         });
     }
+    for m in matches.iter() {
+        checker.debug_rect(
+            m.to_position(),
+            (*m + TilePosition {
+                x: checker.width(),
+                y: checker.height(),
+            })
+            .to_position(),
+            Color::Cyan,
+        );
+    }
     return matches.into_iter().next();
 }
 
@@ -227,7 +244,7 @@ fn building_pos_search(
     matches
 }
 
-fn cartesian_center(points: &Vec<&TilePosition>) -> Option<TilePosition> {
+pub fn cartesian_center(points: &Vec<TilePosition>) -> Option<TilePosition> {
     let len = points.len();
     if len == 0 {
         return None;
@@ -240,9 +257,35 @@ fn cartesian_center(points: &Vec<&TilePosition>) -> Option<TilePosition> {
     })
 }
 
+pub(crate) fn tile_position_towards(
+    from: &TilePosition,
+    distance: i32,
+    towards: &TilePosition,
+) -> TilePosition {
+    let x_dir = towards.x - from.x;
+    let y_dir = towards.y - from.y;
+
+    let mut x_delta = distance;
+    if x_dir < 0 {
+        x_delta *= -1;
+    }
+    let mut y_delta = distance;
+    if y_dir < 0 {
+        y_delta *= -1;
+    }
+
+    *from
+        + TilePosition {
+            x: x_delta,
+            y: y_delta,
+        }
+}
+
 #[cfg(test)]
 mod test {
-    use super::{building_pos_search, cartesian_center, position_near, CanBuild};
+    use super::{
+        building_pos_search, cartesian_center, position_near, tile_position_towards, CanBuild,
+    };
     use rsbwapi::TilePosition;
 
     struct FakeChecker {
@@ -341,10 +384,41 @@ mod test {
     fn test_center() {
         assert_eq!(cartesian_center(&vec![]), None, "empty list of points");
 
-        let points = vec![&TilePosition { x: 0, y: 10 }, &TilePosition { x: 2, y: 16 }];
+        let points = vec![TilePosition { x: 0, y: 10 }, TilePosition { x: 2, y: 16 }];
         assert_eq!(
             cartesian_center(&points),
             Some(TilePosition { x: 1, y: 13 })
+        );
+    }
+
+    #[test]
+    fn test_tile_position_towards() {
+        assert_eq!(
+            tile_position_towards(
+                &TilePosition { x: 0, y: 0 },
+                5,
+                &TilePosition { x: 10, y: 10 }
+            ),
+            TilePosition { x: 5, y: 5 },
+            "easy up and to the right"
+        );
+        assert_eq!(
+            tile_position_towards(
+                &TilePosition { x: 0, y: 0 },
+                0,
+                &TilePosition { x: 10, y: 10 }
+            ),
+            TilePosition { x: 0, y: 0 },
+            "going nowhere"
+        );
+        assert_eq!(
+            tile_position_towards(
+                &TilePosition { x: 0, y: 0 },
+                5,
+                &TilePosition { x: -10, y: 10 }
+            ),
+            TilePosition { x: -5, y: 5 },
+            "up and left"
         );
     }
 }

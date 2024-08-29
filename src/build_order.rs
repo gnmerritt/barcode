@@ -1,4 +1,4 @@
-use crate::counts::Counts;
+use crate::{counts::Counts, drones::DroneManager};
 use rsbwapi::*;
 use std::collections::{HashMap, HashSet};
 
@@ -32,6 +32,7 @@ pub struct BuildOrder {
     building_counts: HashMap<UnitType, i8>,
     placed_buildings: Vec<PlacedBuilding>,
     building_ids: HashSet<usize>,
+    stuck_drones: Vec<UnitId>,
 }
 
 impl BuildOrder {
@@ -43,9 +44,9 @@ impl BuildOrder {
                 BuildStep::new(UnitType::Zerg_Hatchery, 11, 2),
                 BuildStep::new(UnitType::Zerg_Spawning_Pool, 10, 1),
                 BuildStep::new(UnitType::Zerg_Extractor, 9, 1),
-                BuildStep::new(UnitType::Zerg_Lair, 10, 1),
-                BuildStep::new(UnitType::Zerg_Extractor, 9, 2),
-                BuildStep::new(UnitType::Zerg_Spire, 14, 1),
+                BuildStep::new(UnitType::Zerg_Lair, 16, 1),
+                BuildStep::new(UnitType::Zerg_Extractor, 11, 2),
+                BuildStep::new(UnitType::Zerg_Spire, 16, 1),
                 BuildStep::new(UnitType::Zerg_Hatchery, 30, 3),
                 BuildStep::new(UnitType::Zerg_Hatchery, 50, 4),
                 BuildStep::new(UnitType::Zerg_Hydralisk_Den, 40, 1),
@@ -58,6 +59,7 @@ impl BuildOrder {
             building_counts: HashMap::new(),
             placed_buildings: vec![],
             building_ids: HashSet::new(),
+            stuck_drones: vec![],
         }
     }
 
@@ -81,6 +83,13 @@ impl BuildOrder {
                 .collect();
             self.check_placed_buildings(buildings);
         }
+    }
+
+    pub fn release_drones(&mut self, drones: &mut DroneManager) {
+        for id in self.stuck_drones.iter() {
+            drones.idle(*id);
+        }
+        self.stuck_drones.clear();
     }
 
     pub fn get_next_building(&self, counts: &Counts) -> Option<UnitType> {
@@ -156,11 +165,6 @@ impl BuildOrder {
             }
         }
 
-        // stop tracking placed builings after 150 frames
-        // TODO replace with watching the drone's id
-        //        self.placed_buildings
-        //          .retain(|pb| pb.placed_frame + 150 > self.frame);
-
         let mut failed_to_build = vec![];
         for (i, pb) in self.placed_buildings.iter().enumerate() {
             let mut failed = false;
@@ -180,6 +184,7 @@ impl BuildOrder {
                         pb.building_type,
                         self.frame - pb.placed_frame
                     );
+                    self.stuck_drones.push(builder.get_id());
                     failed = true;
                 }
             }
@@ -196,6 +201,7 @@ impl BuildOrder {
                 .and_modify(|c| *c += 1)
                 .or_insert(1);
         }
+        // TODO: this is sneaky wrong if more than one building fails to build
         for i in failed_to_build {
             self.placed_buildings.swap_remove(i);
         }

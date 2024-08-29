@@ -48,10 +48,10 @@ impl HaveSeen {
 
     pub fn on_unit_discover(&mut self, game: &Game, unit: &Unit) {
         if let Some(self_) = game.self_() {
-            let enemy = game.enemy();
             if unit.get_player() == self_ {
                 return;
             }
+            let enemy = game.enemy();
             let frame = game.get_frame_count();
             let type_ = unit.get_type();
             match type_ {
@@ -100,6 +100,13 @@ impl HaveSeen {
 
     pub fn get_enemy_building(&self) -> Option<&SeenUnit> {
         self.buildings.values().next()
+    }
+
+    pub fn get_enemy_army(&self) -> Vec<&SeenUnit> {
+        self.units
+            .values()
+            .filter(|su| !su.unit_type.is_worker() && su.unit_type != UnitType::Zerg_Overlord)
+            .collect()
     }
 }
 

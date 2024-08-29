@@ -36,7 +36,11 @@ impl MiningGas {
                     self.gas, needed_drones
                 );
                 if let Some(to_release) = self.drones.pop() {
-                    to_release.return_cargo().ok();
+                    if to_release.is_carrying_gas() {
+                        to_release.return_cargo().ok();
+                    } else {
+                        to_release.stop().ok();
+                    }
                     drones.idle(to_release.get_id());
                 }
             }
@@ -53,6 +57,11 @@ impl MiningGas {
                 }
             }
             _ => {}
+        }
+        for d in self.drones.iter() {
+            if d.is_idle() {
+                d.gather(&self.gas).ok();
+            }
         }
     }
 }
