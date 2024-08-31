@@ -344,6 +344,8 @@ impl AiModule for BotCallbacks {
         self.check_drones_attacked(&my_units);
 
         // makes games watchable
-        thread::sleep(Duration::from_millis(10));
+        if self.counts.supply_used() > 20 {
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }

@@ -105,15 +105,22 @@ fn position_new_base(game: &Game, builder: &Unit, seen: &HaveSeen) -> Option<Til
         mins_near_gas.push(gas.clone());
         let center_mins_gas = cartesian_center(&mins_near_gas).expect("gas locs always present");
 
+        // be near the gas & also the average position of the mins
+        let locs = vec![gas.clone(), center_mins_gas];
+        let center_locs = cartesian_center(&locs).expect("has gas and cmg");
         checker.debug_rect(
-            center_mins_gas.to_position(),
-            (center_mins_gas + TilePosition { x: 1, y: 1 }).to_position(),
+            center_locs.to_position(),
+            (center_locs + TilePosition { x: 1, y: 1 }).to_position(),
             Color::Orange,
         );
-
-        // be near the gas & also the average position of the mins
-        let locs = vec![&gas, &center_mins_gas];
-        let base_near_geyser = position_near_radius(&checker, &center_mins_gas, &locs, 7, 7, true);
+        let base_near_geyser = position_near_radius(
+            &checker,
+            &center_locs,
+            &vec![&gas, &center_mins_gas],
+            7,
+            7,
+            true,
+        );
         if base_near_geyser.is_some() {
             return base_near_geyser;
         }
@@ -180,8 +187,8 @@ fn position_near_radius(
     // search in a grid centered on the initial location
     use std::cmp::{max, min};
     let tl_x = max(x - search_width, top_left.x);
-    let tl_y = max(y - search_width, top_left.y);
-    let br_x = min(x + search_height, bottom_right.x);
+    let tl_y = max(y - search_height, top_left.y);
+    let br_x = min(x + search_width, bottom_right.x);
     let br_y = min(y + search_height, bottom_right.y);
 
     let tl = TilePosition { x: tl_x, y: tl_y }.to_position();
@@ -194,9 +201,10 @@ fn position_near_radius(
             locations
                 .iter()
                 .map(|l| l.distance_squared(*tl))
-                .collect::<Vec<u32>>()
+                .sum::<u32>()
         });
     }
+    /*
     for m in matches.iter() {
         checker.debug_rect(
             m.to_position(),
@@ -208,6 +216,7 @@ fn position_near_radius(
             Color::Cyan,
         );
     }
+    */
     return matches.into_iter().next();
 }
 
@@ -233,8 +242,8 @@ fn building_pos_search(
     checker: &dyn CanBuild,
 ) -> Vec<TilePosition> {
     let mut matches = vec![];
-    for y in y_start..y_end {
-        for x in x_start..x_end {
+    for y in y_start..y_end + 1 {
+        for x in x_start..x_end + 1 {
             let loc = TilePosition { x, y };
             if checker.can_build_at(loc) {
                 matches.push(loc);

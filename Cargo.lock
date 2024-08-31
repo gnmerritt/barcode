@@ -31,8 +31,7 @@ dependencies = [
 [[package]]
 name = "bwapi_wrapper"
 version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "754cde2067ec8a7fabf3281761396fd44cc1349933eb5c5bf64b76b08d0badd6"
+source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#7b94ca2a9df948d16f68e30214cfdc0a28504bf9"
 dependencies = [
  "derive_more",
  "num-derive",
@@ -108,9 +107,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
@@ -181,8 +180,7 @@ dependencies = [
 [[package]]
 name = "rsbwapi"
 version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b06f2e4f932df942497f341dc8bf428b1949c6bf6dcfb9ec40d6c1ee1ef1242"
+source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#7b94ca2a9df948d16f68e30214cfdc0a28504bf9"
 dependencies = [
  "ahash",
  "bwapi_wrapper",
