@@ -65,8 +65,10 @@ impl BotCallbacks {
 
     fn build_new_building(&mut self, game: &Game, to_build: UnitType) {
         if self.drone_builder.is_none() {
-            self.drone_builder = self.drones.grab_and_assign(DroneRole::Builder);
-            println!("after grabbing a builder drone: {:?}", self.drone_builder);
+            if let Some(drone_id) = self.drones.grab_and_assign(DroneRole::Builder) {
+                self.drone_builder = game.get_unit(drone_id);
+                println!("after grabbing a builder drone: {:?}", self.drone_builder);
+            }
         }
 
         game.draw_text_screen((10, 10), &format!("building {:?}", to_build));
@@ -115,7 +117,7 @@ impl BotCallbacks {
         if let Some(to_upgrade) = my_units.iter().find(|u| u.get_type() == predecessor) {
             if let Ok(true) = to_upgrade.morph(to_build) {
                 println!("morphed a {:?}", to_build);
-                self.build.upgraded_building(to_build);
+                self.build.upgraded_building(to_upgrade.clone(), to_build);
             }
             // set aside money for the upgrade whether it built or not
             self.counts.bought(to_build);
@@ -130,21 +132,23 @@ impl BotCallbacks {
         // TODO: this supply used number seems to be buggy (too high)
         if self.counts.supply_used() >= scout_timing && self.drone_scout.is_none() {
             let drone = self.drones.grab_and_assign(DroneRole::Scout);
-            if let Some(drone) = drone {
-                println!("assigned a drone scout {:?}", drone);
-                drone.stop().ok();
-                let mut scout = Scout::new(drone);
-                for s in game.get_start_locations() {
-                    if !game.is_visible(s) {
-                        scout.go_later(s);
+            if let Some(drone_id) = drone {
+                if let Some(drone) = game.get_unit(drone_id) {
+                    println!("assigned a drone scout {:?}", drone);
+                    drone.stop().ok();
+                    let mut scout = Scout::new(drone);
+                    for s in game.get_start_locations() {
+                        if !game.is_visible(s) {
+                            scout.go_later(s);
+                        }
                     }
-                }
-                for g in self.seen.get_gas_locs() {
-                    if !game.is_visible(*g) {
-                        scout.go_later(*g);
+                    for g in self.seen.get_gas_locs() {
+                        if !game.is_visible(*g) {
+                            scout.go_later(*g);
+                        }
                     }
+                    self.drone_scout = Some(scout);
                 }
-                self.drone_scout = Some(scout);
             }
         }
         if let Some(scout) = &mut self.drone_scout {
@@ -154,8 +158,9 @@ impl BotCallbacks {
                 }
             } else {
                 if scout.is_alive() {
-                    scout.on_frame();
+                    scout.on_frame(game);
                 } else {
+                    // TODO: keep scout's state with new drone
                     println!("need a new scout");
                     self.drone_scout = None; // RIP drone, assign a new one
                 }
@@ -163,7 +168,7 @@ impl BotCallbacks {
         }
     }
 
-    fn check_drones_attacked(&self, my_units: &Vec<Unit>) {
+    fn check_drones_attacked(&mut self, my_units: &Vec<Unit>) {
         let drones = my_units
             .iter()
             .filter(|u| u.get_type() == UnitType::Zerg_Drone && !u.is_morphing());
@@ -171,7 +176,7 @@ impl BotCallbacks {
             if d.is_attacking() || d.is_starting_attack() {
                 continue;
             }
-            let mut run_away = d.is_under_storm();
+            let mut run_away = d.is_under_storm() || d.is_irradiated();
             if !run_away && d.is_under_attack() {
                 let enemy = d
                     .get_units_in_radius(64, |u: &Unit| u.get_player().get_id() == self.enemy_id)
@@ -180,6 +185,7 @@ impl BotCallbacks {
                 if let Some(enemy) = enemy {
                     // println!("drone {} attacking back", d.get_id());
                     d.attack(&enemy).ok();
+                    self.drones.assign(d.get_id(), DroneRole::Defending);
                 } else {
                     run_away = true;
                 }
@@ -189,6 +195,7 @@ impl BotCallbacks {
                 // println!("drone {} running away", d.get_id());
                 d.move_((d.get_tile_position() + ONE_TILE + ONE_TILE).to_position())
                     .ok();
+                self.drones.assign(d.get_id(), DroneRole::Fleeing);
             }
         }
     }
@@ -302,6 +309,7 @@ impl AiModule for BotCallbacks {
         self.seen.on_frame(game);
         self.build.on_frame(game);
         self.counts = Counts::new(game, &self.build);
+        self.drones.on_frame(game);
         self.drones.print_stats(self.counts.frame());
         self.gasses.on_frame(game, &self.counts, &mut self.drones);
         self.build.release_drones(&mut self.drones);
@@ -330,8 +338,14 @@ impl AiModule for BotCallbacks {
             u.get_type().is_mineral_field() && u.is_visible() && !u.is_being_gathered()
         });
         for m in minerals {
-            if let Some(worker) = self.drones.grab_and_assign(DroneRole::Minerals) {
-                println!("worker {} gathering {:?}", worker.get_id(), &m);
+            let worker_id = self.drones.grab_and_assign(DroneRole::Minerals);
+            if let Some(worker) = worker_id.map(|id| game.get_unit(id)).flatten() {
+                print!(
+                    "frame {} :: worker {} gathering {:?}",
+                    self.counts.frame(),
+                    worker.get_id(),
+                    &m
+                );
                 worker.gather(&m).ok();
             }
         }

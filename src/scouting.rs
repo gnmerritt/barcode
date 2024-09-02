@@ -1,4 +1,4 @@
-use rsbwapi::{TilePosition, Unit, UnitId, UnitType};
+use rsbwapi::{Game, TilePosition, Unit, UnitId, UnitType};
 use std::collections::VecDeque;
 
 pub(crate) struct Scout {
@@ -28,7 +28,7 @@ impl Scout {
         self.unit.get_id()
     }
 
-    pub fn on_frame(&mut self) {
+    pub fn on_frame(&mut self, game: &Game) {
         match self.current_destination {
             Some(dest)
                 if self
@@ -36,7 +36,8 @@ impl Scout {
                     .get_position()
                     .chebyshev_distance(dest.to_position())
                     < 3
-                    || self.unit.is_stuck() =>
+                    || (self.unit.is_stuck() && !self.unit.is_moving())
+                    || game.is_visible(dest) =>
             {
                 println!("scout {} arrived at {}", self.unit.get_id(), dest);
                 self.current_destination = None;

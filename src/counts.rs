@@ -54,6 +54,7 @@ impl Counts {
     pub fn bought(&mut self, unit: UnitType) {
         self.minerals -= unit.mineral_price();
         self.gas -= unit.gas_price();
+        self.supply_used += unit.supply_required();
     }
 
     #[allow(unused)]

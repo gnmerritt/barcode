@@ -21,7 +21,7 @@ impl MiningGas {
         }
     }
 
-    fn ensure_mining(&mut self, drones: &mut DroneManager, mining_count: i8) {
+    fn ensure_mining(&mut self, game: &Game, drones: &mut DroneManager, mining_count: i8) {
         let living_drone_count = self
             .drones
             .iter()
@@ -47,11 +47,18 @@ impl MiningGas {
             _ if needed_drones > 0 => {
                 println!("gas {:?} needs {} more drones", self.gas, needed_drones);
                 for _ in 0..needed_drones {
-                    if let Some(d) = drones.grab_and_assign(DroneRole::Gas) {
-                        let res = d.gather(&self.gas);
-                        match res {
-                            Ok(true) => self.drones.push(d),
-                            _ => println!("couldn't mine gas with drone {}: {:?}", d.get_id(), res),
+                    if let Some(id) = drones.grab_and_assign(DroneRole::Gas) {
+                        if let Some(d) = game.get_unit(id) {
+                            let res = d.gather(&self.gas);
+
+                            match res {
+                                Ok(true) => self.drones.push(d),
+                                _ => println!(
+                                    "couldn't mine gas with drone {}: {:?}",
+                                    d.get_id(),
+                                    res
+                                ),
+                            }
                         }
                     }
                 }
@@ -106,7 +113,7 @@ impl GasManager {
 
             let dpg = self.get_drones_per_gas(counts, drones);
             for mut mg in mining_gasses {
-                mg.ensure_mining(drones, dpg);
+                mg.ensure_mining(game, drones, dpg);
                 self.gasses.insert(mg.gas.get_id(), mg);
             }
         }

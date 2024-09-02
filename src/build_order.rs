@@ -46,7 +46,7 @@ impl BuildOrder {
                 BuildStep::new(UnitType::Zerg_Extractor, 9, 1),
                 BuildStep::new(UnitType::Zerg_Lair, 16, 1),
                 BuildStep::new(UnitType::Zerg_Extractor, 11, 2),
-                BuildStep::new(UnitType::Zerg_Spire, 16, 1),
+                BuildStep::new(UnitType::Zerg_Spire, 18, 1), // TODO: this is building before lair finishes
                 BuildStep::new(UnitType::Zerg_Hatchery, 30, 3),
                 BuildStep::new(UnitType::Zerg_Hatchery, 50, 4),
                 BuildStep::new(UnitType::Zerg_Hydralisk_Den, 40, 1),
@@ -123,8 +123,8 @@ impl BuildOrder {
         self.count_type(building_type);
     }
 
-    pub fn upgraded_building(&mut self, building_type: UnitType) {
-        self.placed_building(building_type, None)
+    pub fn upgraded_building(&mut self, building: Unit, building_type: UnitType) {
+        self.placed_building(building_type, Some(building));
     }
 
     fn count_type(&mut self, building_type: UnitType) {
@@ -141,9 +141,13 @@ impl BuildOrder {
 
         for (id, bt) in buildings {
             self.count_type(bt);
+            if bt == UnitType::Zerg_Lair || bt == UnitType::Zerg_Hive {
+                self.count_type(UnitType::Zerg_Hatchery);
+            }
 
             // if this is the first frame they've existed make sure to remove
             // them from the placed buildings list
+            // NB: we check for building upgrades in the next pass below
             if !self.building_ids.contains(&id) {
                 println!(
                     "saw new building of {:?}, placed={:?}",
@@ -185,6 +189,19 @@ impl BuildOrder {
                         self.frame - pb.placed_frame
                     );
                     self.stuck_drones.push(builder.get_id());
+                    failed = true;
+                }
+                if builder.get_type().is_building()
+                    && builder.is_morphing()
+                    && pb.building_type == builder.get_build_type()
+                {
+                    println!(
+                        "frame {} :: {:?} upgrade started after {} frames",
+                        self.frame,
+                        pb,
+                        self.frame - pb.placed_frame
+                    );
+                    // it didn't fail but it isn't "placed" once it's started
                     failed = true;
                 }
             }
