@@ -108,6 +108,10 @@ impl DroneManager {
         }
     }
 
+    pub fn check_role(&self, id: &UnitId) -> DroneRole {
+        self.by_id.get(id).unwrap_or(&DroneRole::Idle).clone()
+    }
+
     pub fn idle(&mut self, id: UnitId) {
         self.assign(id, DroneRole::Idle);
     }

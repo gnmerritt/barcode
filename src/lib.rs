@@ -4,6 +4,7 @@ mod build_position;
 mod counts;
 mod drones;
 mod gas;
+mod minerals;
 mod scouting;
 mod seen;
 mod unit_comp;

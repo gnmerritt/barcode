@@ -128,7 +128,7 @@ fn position_new_base(game: &Game, builder: &Unit, seen: &HaveSeen) -> Option<Til
     position_near_hatch(game, &checker)
 }
 
-fn get_hatches(game: &Game) -> Vec<Unit> {
+pub fn get_hatches(game: &Game) -> Vec<Unit> {
     if let Some(self_) = game.self_() {
         self_
             .get_units()
@@ -204,19 +204,6 @@ fn position_near_radius(
                 .sum::<u32>()
         });
     }
-    /*
-    for m in matches.iter() {
-        checker.debug_rect(
-            m.to_position(),
-            (*m + TilePosition {
-                x: checker.width(),
-                y: checker.height(),
-            })
-            .to_position(),
-            Color::Cyan,
-        );
-    }
-    */
     return matches.into_iter().next();
 }
 

@@ -6,6 +6,7 @@ use crate::{
     counts::Counts,
     drones::{DroneManager, DroneRole},
     gas::GasManager,
+    minerals::MineralManager,
     scouting::Scout,
     seen::HaveSeen,
     unit_comp::UnitComp,
@@ -15,6 +16,7 @@ use rsbwapi::*;
 pub struct BotCallbacks {
     build: BuildOrder,
     gasses: GasManager,
+    minerals: MineralManager,
     drones: DroneManager,
     drone_scout: Option<Scout>,
     drone_builder: Option<Unit>,
@@ -32,6 +34,7 @@ impl BotCallbacks {
         BotCallbacks {
             build: BuildOrder::new(),
             gasses: GasManager::new(),
+            minerals: MineralManager::new(),
             seen: HaveSeen::new(),
             counts: Counts::new_fake(0),
             drones: DroneManager::new(),
@@ -312,14 +315,14 @@ impl AiModule for BotCallbacks {
         self.drones.on_frame(game);
         self.drones.print_stats(self.counts.frame());
         self.gasses.on_frame(game, &self.counts, &mut self.drones);
+        self.minerals.on_frame(game, &self.counts, &mut self.drones);
         self.build.release_drones(&mut self.drones);
 
         let self_ = game.self_().unwrap();
         let my_units = self_.get_units();
 
         // place our next building
-        let next_building = self.build.get_next_building(&self.counts);
-        match next_building {
+        match self.build.get_next_building(&self.counts) {
             Some(
                 to_build @ (UnitType::Zerg_Lair
                 | UnitType::Zerg_Hive
@@ -330,24 +333,6 @@ impl AiModule for BotCallbacks {
                 println!("saw non-building {:?} from build order", not_a_building)
             }
             None => {}
-        }
-
-        // assign idle workers to mine minerals
-        // TODO: update this like the gas handler to balance drones
-        let minerals = game.get_all_units().into_iter().filter(|u| {
-            u.get_type().is_mineral_field() && u.is_visible() && !u.is_being_gathered()
-        });
-        for m in minerals {
-            let worker_id = self.drones.grab_and_assign(DroneRole::Minerals);
-            if let Some(worker) = worker_id.map(|id| game.get_unit(id)).flatten() {
-                print!(
-                    "frame {} :: worker {} gathering {:?}",
-                    self.counts.frame(),
-                    worker.get_id(),
-                    &m
-                );
-                worker.gather(&m).ok();
-            }
         }
 
         let mut comp = UnitComp::new(game);
