@@ -69,7 +69,7 @@ impl BuildOrder {
                 BuildStep::new(UnitType::Zerg_Hydralisk_Den, 40, 1),
                 BuildStep::new(UnitType::Zerg_Extractor, 50, 3),
                 BuildStep::new(UnitType::Zerg_Queens_Nest, 50, 1),
-                BuildStep::new(UnitType::Zerg_Hive, 50, 1),
+                BuildStep::new(UnitType::Zerg_Hive, 50, 1), // TODO we morph another lair when this starts
                 BuildStep::new(UnitType::Zerg_Defiler_Mound, 50, 1),
                 BuildStep::new(UnitType::Zerg_Hatchery, 60, 9),
             ],
@@ -189,16 +189,14 @@ impl BuildOrder {
             }
         }
 
-        let mut failed_to_build = vec![];
-        for (i, pb) in self.placed_buildings.iter().enumerate() {
-            let mut failed = false;
+        self.placed_buildings.retain(|pb| {
             if let Some(builder) = pb.builder.as_ref() {
                 if !builder.exists() {
                     println!(
                         "frame {} :: {:?} failed to build, builder died",
                         self.frame, pb.building_type
                     );
-                    failed = true;
+                    return false;
                 }
                 // TODO: similar check for building upgrades if we see them fail?
                 if self.frame > pb.placed_frame + 10 && builder.is_idle() {
@@ -209,7 +207,7 @@ impl BuildOrder {
                         self.frame - pb.placed_frame
                     );
                     self.stuck_drones.push(builder.get_id());
-                    failed = true;
+                    return false;
                 }
                 if builder.get_type().is_building()
                     && builder.is_morphing()
@@ -222,25 +220,19 @@ impl BuildOrder {
                         self.frame - pb.placed_frame
                     );
                     // it didn't fail but it isn't "placed" once it's started
-                    failed = true;
+                    return false;
                 }
             }
+            true
+        });
 
-            if failed {
-                failed_to_build.push(i);
-                continue;
-            }
-
-            // count placed buildings in our builder too
-            // replacing this with the method angers the borrow checker :-(
+        // count placed buildings in our builder too
+        // replacing this with the method angers the borrow checker :-(
+        for pb in self.placed_buildings.iter() {
             self.building_counts
                 .entry(pb.building_type)
                 .and_modify(|c| *c += 1)
                 .or_insert(1);
-        }
-        // TODO: this is sneaky wrong if more than one building fails to build
-        for i in failed_to_build {
-            self.placed_buildings.swap_remove(i);
         }
     }
 
