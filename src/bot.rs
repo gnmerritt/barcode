@@ -322,7 +322,7 @@ impl AiModule for BotCallbacks {
         let my_units = self_.get_units();
 
         // place our next building
-        match self.build.get_next_building(&self.counts) {
+        match self.build.get_next_building(game, &self.counts) {
             Some(
                 to_build @ (UnitType::Zerg_Lair
                 | UnitType::Zerg_Hive

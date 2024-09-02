@@ -2,6 +2,23 @@ use crate::{counts::Counts, drones::DroneManager};
 use rsbwapi::*;
 use std::collections::{HashMap, HashSet};
 
+pub(crate) trait TechChecker {
+    fn has_prereqs(&self, unit_type: &UnitType) -> bool;
+}
+
+impl TechChecker for &Game {
+    fn has_prereqs(&self, unit_type: &UnitType) -> bool {
+        if let Some(self_) = self.self_() {
+            unit_type
+                .required_units()
+                .into_iter()
+                .all(|(unit, amount)| self_.has_unit_type_requirement(*unit, *amount))
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct BuildStep {
     unit_type: UnitType,
@@ -44,9 +61,9 @@ impl BuildOrder {
                 BuildStep::new(UnitType::Zerg_Hatchery, 11, 2),
                 BuildStep::new(UnitType::Zerg_Spawning_Pool, 10, 1),
                 BuildStep::new(UnitType::Zerg_Extractor, 9, 1),
-                BuildStep::new(UnitType::Zerg_Lair, 16, 1),
+                BuildStep::new(UnitType::Zerg_Lair, 15, 1),
                 BuildStep::new(UnitType::Zerg_Extractor, 11, 2),
-                BuildStep::new(UnitType::Zerg_Spire, 18, 1), // TODO: this is building before lair finishes
+                BuildStep::new(UnitType::Zerg_Spire, 15, 1),
                 BuildStep::new(UnitType::Zerg_Hatchery, 30, 3),
                 BuildStep::new(UnitType::Zerg_Hatchery, 50, 4),
                 BuildStep::new(UnitType::Zerg_Hydralisk_Den, 40, 1),
@@ -92,13 +109,16 @@ impl BuildOrder {
         self.stuck_drones.clear();
     }
 
-    pub fn get_next_building(&self, counts: &Counts) -> Option<UnitType> {
+    pub fn get_next_building(&self, tech: impl TechChecker, counts: &Counts) -> Option<UnitType> {
         let supply_used = counts.supply_used();
         for step in self.to_build.iter() {
             let count = self.building_counts.get(&step.unit_type).unwrap_or(&0);
             if *count < step.building_type_count {
                 // remember that BW doubles supplies
                 if supply_used >= 2 * step.min_supply {
+                    if !tech.has_prereqs(&step.unit_type) {
+                        return None;
+                    }
                     return Some(step.unit_type.clone());
                 } else if counts.minerals() > 1_000 {
                     return Some(UnitType::Zerg_Hatchery);
@@ -243,24 +263,36 @@ impl BuildOrder {
 mod test {
     use super::*;
 
+    struct AllTech;
+    impl TechChecker for &AllTech {
+        fn has_prereqs(&self, _unit_type: &UnitType) -> bool {
+            true
+        }
+    }
+
     #[test]
     fn test_get_building() {
+        let tech = AllTech {};
         let mut bo = BuildOrder::new();
         // we start out with one hatch
         bo.check_placed_buildings(vec![(10, UnitType::Zerg_Hatchery)]);
 
         let c = Counts::new_fake(8);
-        assert_eq!(bo.get_next_building(&c), None, "saw building too early");
+        assert_eq!(
+            bo.get_next_building(&tech, &c),
+            None,
+            "saw building too early"
+        );
         let c = Counts::new_fake(22);
         assert_eq!(
-            bo.get_next_building(&c),
+            bo.get_next_building(&tech, &c),
             Some(UnitType::Zerg_Hatchery),
             "got hatch first"
         );
         // no-op to place a building not in the order
         bo.placed_building(UnitType::Terran_Barracks, None);
         assert_eq!(
-            bo.get_next_building(&c),
+            bo.get_next_building(&tech, &c),
             Some(UnitType::Zerg_Hatchery),
             "still got hatch"
         );
@@ -272,7 +304,7 @@ mod test {
 
         bo.placed_building(UnitType::Zerg_Hatchery, None);
         assert_eq!(
-            bo.get_next_building(&c),
+            bo.get_next_building(&tech, &c),
             Some(UnitType::Zerg_Spawning_Pool),
             "pool after hatch"
         );
