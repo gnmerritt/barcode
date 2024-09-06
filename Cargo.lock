@@ -31,7 +31,7 @@ dependencies = [
 [[package]]
 name = "bwapi_wrapper"
 version = "0.3.3"
-source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#2dbe38fdc7633be82ebeb989de9feda5e15bd2fd"
+source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#9c4b47bae4e17a6035fccb6bd74756be7aa91ec1"
 dependencies = [
  "derive_more",
  "num-derive",
@@ -116,9 +116,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.155"
+version = "0.2.158"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
+checksum = "d8adc4bb1803a324070e64a98ae98f38934d91957a99cfb3a43dcbc01bc56439"
 
 [[package]]
 name = "libm"
@@ -170,9 +170,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.36"
+version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fa76aaf39101c457836aec0ce2316dbdc3ab723cdda1c6bd4e6ad4208acaca7"
+checksum = "b5b9d34b8991d19d98081b46eacdd8eb58c6f2b201139f7c5f643cc155a633af"
 dependencies = [
  "proc-macro2",
 ]
@@ -180,7 +180,7 @@ dependencies = [
 [[package]]
 name = "rsbwapi"
 version = "0.3.3"
-source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#2dbe38fdc7633be82ebeb989de9feda5e15bd2fd"
+source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#9c4b47bae4e17a6035fccb6bd74756be7aa91ec1"
 dependencies = [
  "ahash",
  "bwapi_wrapper",
@@ -206,9 +206,9 @@ dependencies = [
 
 [[package]]
 name = "rustc_version"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa0f585226d2e68097d4f95d113b15b83a82e819ab25717ec0590d9584ef366"
+checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
 ]
@@ -233,9 +233,9 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "syn"
-version = "2.0.72"
+version = "2.0.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc4b9b9bf2add8093d3f2c0204471e951b2285580335de42f9d2534f3ae7a8af"
+checksum = "9f35bcdf61fd8e7be6caf75f429fdca8beb3ed76584befb503b1569faee373ed"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -3,10 +3,10 @@
 // splash damage
 // shield/hp regen
 
-use rsbwapi::{DamageType, UnitSizeType, UnitType, WeaponType};
+use rsbwapi::{DamageType, Player, Unit, UnitSizeType, UnitType, WeaponType};
 
 #[derive(PartialEq, Default, Debug)]
-struct Damage {
+pub(crate) struct Damage {
     shield: f32,
     hp: f32,
 }
@@ -24,22 +24,40 @@ impl Damage {
     }
 }
 
-// TODO: calculate armor and weapon upgrade damage using
-// Player::damage(WeaponType) and Player::armor(UnitType) at struct creation
-
 #[derive(Debug)]
-struct SimWeapon {
+pub(crate) struct SimWeapon {
     type_: WeaponType,
-    upgrade_damage: f32,
+    upgrade_damage: i32,
+}
+
+impl SimWeapon {
+    pub(crate) fn from_weapon(player: &Player, wep: &WeaponType) -> Self {
+        SimWeapon {
+            type_: wep.clone(),
+            upgrade_damage: wep.damage_bonus() * player.get_upgrade_level(wep.upgrade_type()),
+        }
+    }
 }
 
 #[derive(Debug)]
-struct SimUnit {
+pub(crate) struct SimUnit {
     type_: UnitType,
-    armor: f32,
-    shield_armor: f32,
+    armor: i32,
+    shield_armor: i32,
     hp: f32,      // hp rounds up
     shields: f32, // shields round down
+}
+
+impl SimUnit {
+    pub(crate) fn from_unit(unit: &Unit) -> Self {
+        SimUnit {
+            type_: unit.get_type(),
+            hp: unit.get_hit_points() as f32,
+            shields: unit.get_shields() as f32,
+            armor: unit.get_armor(),
+            shield_armor: unit.get_shield_armor(),
+        }
+    }
 }
 
 fn get_damage_ratio(wpn: WeaponType, target_size: UnitSizeType) -> f32 {
@@ -67,21 +85,16 @@ fn damage_per_hit(weapon: &SimWeapon, target: &SimUnit) -> Damage {
     let mut hp_damage = 0.0;
 
     let damage_ratio = get_damage_ratio(weapon.type_, target.type_.size());
-    dbg!(damage_ratio);
-    dbg!(weapon.type_.damage_factor());
-    dbg!(weapon.type_);
 
     for _ in 0..weapon.type_.damage_factor() {
-        let mut wep_damage = weapon.type_.damage_amount() as f32 + weapon.upgrade_damage;
+        let mut wep_damage = (weapon.type_.damage_amount() + weapon.upgrade_damage) as f32;
         let shields_remaining = target.shields - shield_damage;
-
-        dbg!(wep_damage);
 
         // damage applied to shields first, no size ratio adjustment
         // shield rounds down so a full 1.0 of shield is required before it
         // factors into damage calculations
         let attack_shield_damage = if shields_remaining > 1.0 {
-            wep_damage -= target.shield_armor;
+            wep_damage -= target.shield_armor as f32;
             let dealt_to_shield = if shields_remaining > wep_damage {
                 wep_damage
             } else {
@@ -93,18 +106,16 @@ fn damage_per_hit(weapon: &SimWeapon, target: &SimUnit) -> Damage {
             0.0
         };
         shield_damage += attack_shield_damage;
-        dbg!(attack_shield_damage);
 
         // if there is remaining damage it is applied to hp
         if wep_damage > 0.0 {
-            let attack_hp_damage = damage_ratio * (wep_damage - target.armor) as f32;
+            let attack_hp_damage = damage_ratio * (wep_damage - target.armor as f32);
             if attack_hp_damage < MIN_DAMAGE && attack_shield_damage == 0.0 {
                 hp_damage += MIN_DAMAGE;
             } else {
                 hp_damage += attack_hp_damage;
             }
         }
-        dbg!(hp_damage);
     }
 
     Damage {
@@ -140,12 +151,12 @@ mod test {
     fn test_damage_per_hit() {
         let ling = SimWeapon {
             type_: WeaponType::Claws,
-            upgrade_damage: 0.0,
+            upgrade_damage: 0,
         };
         let marine = SimUnit {
             type_: UnitType::Terran_Marine,
-            shield_armor: 0.0,
-            armor: 0.0,
+            shield_armor: 0,
+            armor: 0,
             hp: 40.0,
             shields: 0.0,
         };
@@ -160,12 +171,12 @@ mod test {
     fn test_dph_shields_armor() {
         let hydra = SimWeapon {
             type_: WeaponType::Needle_Spines,
-            upgrade_damage: 1.0,
+            upgrade_damage: 1,
         };
         let zealot = SimUnit {
             type_: UnitType::Protoss_Zealot,
-            shield_armor: 0.0,
-            armor: 1.0,
+            shield_armor: 0,
+            armor: 1,
             hp: 100.0,
             shields: 8.0,
         };
@@ -191,15 +202,15 @@ mod test {
     }
 
     #[test]
-    fn test_dpg_damage_factor() {
+    fn test_dph_damage_factor() {
         let zealot = SimWeapon {
             type_: WeaponType::Psi_Blades,
-            upgrade_damage: 2.0,
+            upgrade_damage: 2,
         };
         let ling = SimUnit {
             type_: UnitType::Zerg_Zergling,
-            armor: 1.0,
-            shield_armor: 0.0,
+            armor: 1,
+            shield_armor: 0,
             hp: 35.0,
             shields: 0.0,
         };
