@@ -17,7 +17,7 @@ impl MineralManager {
         }
     }
 
-    pub fn on_frame(&mut self, game: &Game, counts: &Counts, drones: &mut DroneManager) {
+    fn get_visible_minerals(&self, game: &Game) -> HashSet<usize> {
         let mut patches = HashSet::new();
         for base in get_hatches(game) {
             let mid_of_base = base.get_tile_position() + base.get_type().tile_size() / 2;
@@ -29,7 +29,20 @@ impl MineralManager {
                 .map(|m| m.get_id());
             patches.extend(mins);
         }
+        patches
+    }
 
+    pub fn on_frame(&mut self, game: &Game, counts: &Counts, drones: &mut DroneManager) {
+        let patches = self.get_visible_minerals(game);
+        // prune non-current patches (mined out, base destroyed, etc)
+        self.patch_to_drones.retain(|id, patch_drones| {
+            if !patches.contains(&id) {
+                patch_drones.iter().for_each(|drone| drones.idle(*drone));
+                false
+            } else {
+                true
+            }
+        });
         let least_mined_patch = self
             .patch_to_drones
             .values()
@@ -40,6 +53,7 @@ impl MineralManager {
         for id in patches {
             if let Some(patch) = game.get_unit(id) {
                 let mining = self.patch_to_drones.entry(id).or_insert_with(Vec::new);
+                // prune drones that aren't mining anymore
                 mining.retain(|drone_id| {
                     if let Some(drone) = game.get_unit(*drone_id) {
                         if drones.check_role(drone_id) != DroneRole::Minerals {
@@ -57,9 +71,16 @@ impl MineralManager {
                         false
                     }
                 });
+                // saturate patches evenly
                 if mining.len() > least_mined_patch {
+                    // worker transfer
+                    if mining.len() > 2 && least_mined_patch == 0 {
+                        let transfered = mining.swap_remove(0);
+                        drones.idle(transfered);
+                    }
                     continue;
                 }
+                // assign an idle drone to the patch
                 if let Some(drone) = drones
                     .grab_and_assign(DroneRole::Minerals)
                     .map(|id| game.get_unit(id))
@@ -84,8 +105,6 @@ impl MineralManager {
                         drones.idle(drone.get_id());
                     }
                 }
-            } else {
-                self.patch_to_drones.remove(&id);
             }
         }
     }

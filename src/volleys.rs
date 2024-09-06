@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 // first pass: a volley calculator that doesn't take into account many things including:
 // high ground misses
 // splash damage
