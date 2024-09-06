@@ -67,10 +67,15 @@ fn damage_per_hit(weapon: &SimWeapon, target: &SimUnit) -> Damage {
     let mut hp_damage = 0.0;
 
     let damage_ratio = get_damage_ratio(weapon.type_, target.type_.size());
+    dbg!(damage_ratio);
+    dbg!(weapon.type_.damage_factor());
+    dbg!(weapon.type_);
 
     for _ in 0..weapon.type_.damage_factor() {
         let mut wep_damage = weapon.type_.damage_amount() as f32 + weapon.upgrade_damage;
         let shields_remaining = target.shields - shield_damage;
+
+        dbg!(wep_damage);
 
         // damage applied to shields first, no size ratio adjustment
         // shield rounds down so a full 1.0 of shield is required before it
@@ -88,6 +93,7 @@ fn damage_per_hit(weapon: &SimWeapon, target: &SimUnit) -> Damage {
             0.0
         };
         shield_damage += attack_shield_damage;
+        dbg!(attack_shield_damage);
 
         // if there is remaining damage it is applied to hp
         if wep_damage > 0.0 {
@@ -98,6 +104,7 @@ fn damage_per_hit(weapon: &SimWeapon, target: &SimUnit) -> Damage {
                 hp_damage += attack_hp_damage;
             }
         }
+        dbg!(hp_damage);
     }
 
     Damage {
@@ -166,6 +173,40 @@ mod test {
             damage_per_hit(&hydra, &zealot),
             Damage::new(1.0, 8.0),
             "+1 hydra v zealot"
+        );
+    }
+
+    #[test]
+    fn test_some_damage_factors() {
+        assert_eq!(
+            WeaponType::Hellfire_Missile_Pack.damage_factor(),
+            2,
+            "hellfire missles come in twos"
+        );
+        assert_eq!(
+            WeaponType::Psi_Blades.damage_factor(),
+            2,
+            "two zealot hits at a time"
+        );
+    }
+
+    #[test]
+    fn test_dpg_damage_factor() {
+        let zealot = SimWeapon {
+            type_: WeaponType::Psi_Blades,
+            upgrade_damage: 2.0,
+        };
+        let ling = SimUnit {
+            type_: UnitType::Zerg_Zergling,
+            armor: 1.0,
+            shield_armor: 0.0,
+            hp: 35.0,
+            shields: 0.0,
+        };
+        assert_eq!(
+            damage_per_hit(&zealot, &ling),
+            Damage::hp(18.0),
+            "+2 zealot v +1 armor ling"
         );
     }
 }

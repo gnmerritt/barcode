@@ -31,7 +31,7 @@ dependencies = [
 [[package]]
 name = "bwapi_wrapper"
 version = "0.3.3"
-source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#7b94ca2a9df948d16f68e30214cfdc0a28504bf9"
+source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#2dbe38fdc7633be82ebeb989de9feda5e15bd2fd"
 dependencies = [
  "derive_more",
  "num-derive",
@@ -180,7 +180,7 @@ dependencies = [
 [[package]]
 name = "rsbwapi"
 version = "0.3.3"
-source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#7b94ca2a9df948d16f68e30214cfdc0a28504bf9"
+source = "git+https://github.com/gnmerritt/rsbwapi.git?branch=nathan-working#2dbe38fdc7633be82ebeb989de9feda5e15bd2fd"
 dependencies = [
  "ahash",
  "bwapi_wrapper",
