@@ -30,6 +30,9 @@ impl Damage {
 pub(crate) struct SimWeapon {
     type_: WeaponType,
     upgrade_damage: i32,
+    range_min: i32,
+    range_max: i32,
+    cooldown: i32,
 }
 
 impl SimWeapon {
@@ -37,11 +40,25 @@ impl SimWeapon {
         SimWeapon {
             type_: wep.clone(),
             upgrade_damage: wep.damage_bonus() * player.get_upgrade_level(wep.upgrade_type()),
+            range_min: wep.min_range(),
+            range_max: wep.max_range(),
+            cooldown: wep.damage_cooldown(),
+        }
+    }
+
+    #[cfg(test)]
+    fn simple(wep: WeaponType, upgrade_damage: i32) -> Self {
+        SimWeapon {
+            type_: wep,
+            upgrade_damage,
+            range_min: wep.min_range(),
+            range_max: wep.max_range(), // TODO range upgrades
+            cooldown: wep.damage_cooldown(),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct SimUnit {
     type_: UnitType,
     armor: i32,
@@ -126,6 +143,20 @@ fn damage_per_hit(weapon: &SimWeapon, target: &SimUnit) -> Damage {
     }
 }
 
+/// returns the number of volleys with a weapon required to kill a unit
+/// doesn't factor in timing or legal targetability (air/ground)
+pub(crate) fn volleys_to_kill(target: &SimUnit, weapon: &SimWeapon) -> i32 {
+    let mut target = target.clone();
+    let mut volleys = 0;
+    while target.hp > 0.0 {
+        let Damage { shield, hp } = damage_per_hit(weapon, &target);
+        target.shields -= shield;
+        target.hp -= hp;
+        volleys += 1;
+    }
+    volleys
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -151,10 +182,7 @@ mod test {
 
     #[test]
     fn test_damage_per_hit() {
-        let ling = SimWeapon {
-            type_: WeaponType::Claws,
-            upgrade_damage: 0,
-        };
+        let ling = SimWeapon::simple(WeaponType::Claws, 0);
         let marine = SimUnit {
             type_: UnitType::Terran_Marine,
             shield_armor: 0,
@@ -167,14 +195,12 @@ mod test {
             Damage::hp(5.0),
             "ling v marine"
         );
+        assert_eq!(volleys_to_kill(&marine, &ling), 8, "ling v marine");
     }
 
     #[test]
     fn test_dph_shields_armor() {
-        let hydra = SimWeapon {
-            type_: WeaponType::Needle_Spines,
-            upgrade_damage: 1,
-        };
+        let hydra = SimWeapon::simple(WeaponType::Needle_Spines, 1);
         let zealot = SimUnit {
             type_: UnitType::Protoss_Zealot,
             shield_armor: 0,
@@ -185,6 +211,13 @@ mod test {
         assert_eq!(
             damage_per_hit(&hydra, &zealot),
             Damage::new(1.0, 8.0),
+            "+1 hydra v zealot"
+        );
+        let mut full_zealot = zealot.clone();
+        full_zealot.shields = 60.0;
+        assert_eq!(
+            volleys_to_kill(&full_zealot, &hydra),
+            26, // per bwcalc when you have more than 1 hydra attacking
             "+1 hydra v zealot"
         );
     }
@@ -205,10 +238,7 @@ mod test {
 
     #[test]
     fn test_dph_damage_factor() {
-        let zealot = SimWeapon {
-            type_: WeaponType::Psi_Blades,
-            upgrade_damage: 2,
-        };
+        let zealot = SimWeapon::simple(WeaponType::Psi_Blades, 2);
         let ling = SimUnit {
             type_: UnitType::Zerg_Zergling,
             armor: 1,
@@ -220,6 +250,11 @@ mod test {
             damage_per_hit(&zealot, &ling),
             Damage::hp(18.0),
             "+2 zealot v +1 armor ling"
+        );
+        assert_eq!(
+            volleys_to_kill(&ling, &zealot),
+            2,
+            "+1 net zealot two-shots a ling"
         );
     }
 }
