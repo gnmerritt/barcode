@@ -1,11 +1,10 @@
-#![allow(unused)]
-
 // first pass: a volley calculator that doesn't take into account many things including:
 // high ground misses
 // splash damage
 // shield/hp regen
 
-use rsbwapi::{DamageType, Player, Unit, UnitSizeType, UnitType, WeaponType};
+use super::{SimUnit, SimWeapon};
+use rsbwapi::{DamageType, UnitSizeType, WeaponType};
 
 #[derive(PartialEq, Default, Debug)]
 pub(crate) struct Damage {
@@ -26,70 +25,18 @@ impl Damage {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct SimWeapon {
-    type_: WeaponType,
-    upgrade_damage: i32,
-    range_min: i32,
-    range_max: i32,
-    cooldown: i32,
-}
-
-impl SimWeapon {
-    pub(crate) fn from_weapon(player: &Player, wep: &WeaponType) -> Self {
-        SimWeapon {
-            type_: wep.clone(),
-            upgrade_damage: wep.damage_bonus() * player.get_upgrade_level(wep.upgrade_type()),
-            range_min: wep.min_range(),
-            range_max: wep.max_range(),
-            cooldown: wep.damage_cooldown(),
-        }
-    }
-
-    #[cfg(test)]
-    fn simple(wep: WeaponType, upgrade_damage: i32) -> Self {
-        SimWeapon {
-            type_: wep,
-            upgrade_damage,
-            range_min: wep.min_range(),
-            range_max: wep.max_range(), // TODO range upgrades
-            cooldown: wep.damage_cooldown(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct SimUnit {
-    type_: UnitType,
-    armor: i32,
-    shield_armor: i32,
-    hp: f32,      // hp rounds up
-    shields: f32, // shields round down
-}
-
-impl SimUnit {
-    pub(crate) fn from_unit(unit: &Unit) -> Self {
-        SimUnit {
-            type_: unit.get_type(),
-            hp: unit.get_hit_points() as f32,
-            shields: unit.get_shields() as f32,
-            armor: unit.get_armor(),
-            shield_armor: unit.get_shield_armor(),
-        }
-    }
-}
+const DAMAGE_RATIO: [[f32; UnitSizeType::MAX as usize]; DamageType::MAX as usize] = [
+    // Ind, Sml, Med, Lrg, Non, Unk
+    [0.0; UnitSizeType::MAX as usize], // Independent
+    [0.0, 0.5, 0.75, 1.0, 0.0, 0.0],   // Explosive
+    [0.0, 1.0, 0.5, 0.25, 0.0, 0.0],   // Concussive
+    [0.0, 1.0, 1.0, 1.0, 0.0, 0.0],    // Normal
+    [0.0, 1.0, 1.0, 1.0, 0.0, 0.0],    // Ignore_Armor
+    [0.0; UnitSizeType::MAX as usize], // None
+    [0.0; UnitSizeType::MAX as usize], // Unknown
+];
 
 fn get_damage_ratio(wpn: WeaponType, target_size: UnitSizeType) -> f32 {
-    static DAMAGE_RATIO: [[f32; UnitSizeType::MAX as usize]; DamageType::MAX as usize] = [
-        // Ind, Sml, Med, Lrg, Non, Unk
-        [0.0; UnitSizeType::MAX as usize], // Independent
-        [0.0, 0.5, 0.75, 1.0, 0.0, 0.0],   // Explosive
-        [0.0, 1.0, 0.5, 0.25, 0.0, 0.0],   // Concussive
-        [0.0, 1.0, 1.0, 1.0, 0.0, 0.0],    // Normal
-        [0.0, 1.0, 1.0, 1.0, 0.0, 0.0],    // Ignore_Armor
-        [0.0; UnitSizeType::MAX as usize], // None
-        [0.0; UnitSizeType::MAX as usize], // Unknown
-    ];
     DAMAGE_RATIO[wpn.damage_type() as usize][target_size as usize]
 }
 
@@ -160,6 +107,7 @@ pub(crate) fn volleys_to_kill(target: &SimUnit, weapon: &SimWeapon) -> i32 {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rsbwapi::UnitType;
 
     #[test]
     fn test_damage_ratio() {
@@ -183,13 +131,7 @@ mod test {
     #[test]
     fn test_damage_per_hit() {
         let ling = SimWeapon::simple(WeaponType::Claws, 0);
-        let marine = SimUnit {
-            type_: UnitType::Terran_Marine,
-            shield_armor: 0,
-            armor: 0,
-            hp: 40.0,
-            shields: 0.0,
-        };
+        let marine = SimUnit::simple(UnitType::Terran_Marine, 0, 0, 40.0, 0.0);
         assert_eq!(
             damage_per_hit(&ling, &marine),
             Damage::hp(5.0),
@@ -201,13 +143,7 @@ mod test {
     #[test]
     fn test_dph_shields_armor() {
         let hydra = SimWeapon::simple(WeaponType::Needle_Spines, 1);
-        let zealot = SimUnit {
-            type_: UnitType::Protoss_Zealot,
-            shield_armor: 0,
-            armor: 1,
-            hp: 100.0,
-            shields: 8.0,
-        };
+        let zealot = SimUnit::simple(UnitType::Protoss_Zealot, 0, 1, 100.0, 8.0);
         assert_eq!(
             damage_per_hit(&hydra, &zealot),
             Damage::new(1.0, 8.0),
@@ -239,13 +175,7 @@ mod test {
     #[test]
     fn test_dph_damage_factor() {
         let zealot = SimWeapon::simple(WeaponType::Psi_Blades, 2);
-        let ling = SimUnit {
-            type_: UnitType::Zerg_Zergling,
-            armor: 1,
-            shield_armor: 0,
-            hp: 35.0,
-            shields: 0.0,
-        };
+        let ling = SimUnit::simple(UnitType::Zerg_Zergling, 0, 1, 35.0, 0.0);
         assert_eq!(
             damage_per_hit(&zealot, &ling),
             Damage::hp(18.0),
