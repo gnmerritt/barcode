@@ -8,14 +8,21 @@ use rsbwapi::{DamageType, UnitSizeType, WeaponType};
 
 #[derive(PartialEq, Default, Debug)]
 pub(crate) struct Damage {
-    shield: f32,
-    hp: f32,
+    pub shield: f32,
+    pub hp: f32,
 }
 
 impl Damage {
-    fn hp(hp: f32) -> Self {
+    pub fn hp(hp: f32) -> Self {
         Damage {
             hp,
+            ..Default::default()
+        }
+    }
+
+    pub fn shield(shield: f32) -> Self {
+        Damage {
+            shield,
             ..Default::default()
         }
     }

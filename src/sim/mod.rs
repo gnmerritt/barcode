@@ -136,3 +136,13 @@ struct SimOrder {
     order: Order,
     issued_frame: i32,
 }
+
+impl SimOrder {
+    fn new(unit: UnitId, order: Order, issued_frame: i32) -> Self {
+        SimOrder {
+            unit,
+            order,
+            issued_frame,
+        }
+    }
+}
