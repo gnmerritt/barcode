@@ -27,7 +27,7 @@ impl Damage {
         }
     }
 
-    fn new(hp: f32, shield: f32) -> Self {
+    pub fn new(hp: f32, shield: f32) -> Self {
         Damage { hp, shield }
     }
 }
@@ -53,7 +53,7 @@ const MIN_DAMAGE: f32 = 0.5;
 // references:
 // https://bwcalc.com/
 // https://liquipedia.net/starcraft/Damage_Order_of_Operations
-fn damage_per_hit(weapon: &SimWeapon, target: &SimUnit) -> Damage {
+pub fn damage_per_hit(weapon: &SimWeapon, target: &SimUnit) -> Damage {
     let mut shield_damage = 0.0;
     let mut hp_damage = 0.0;
 

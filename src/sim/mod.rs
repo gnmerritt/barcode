@@ -1,10 +1,11 @@
 #![allow(unused)]
 use rsbwapi::{
     unit::UnitOrPosition, Player, PlayerId, ScaledPosition, TechType, Unit, UnitId, UnitType,
-    WeaponType,
+    Vector2D, WeaponType,
 };
 
 mod engine;
+mod orders;
 mod volleys;
 
 #[derive(Debug, Clone)]
@@ -19,8 +20,8 @@ pub(crate) struct SimWeapon {
     type_: WeaponType,
     targets: TargetType,
     upgrade_damage: i32,
-    range_min: i32,
-    range_max: i32,
+    range_min: f64,
+    range_max: f64,
     cooldown: i32,
 }
 
@@ -30,8 +31,8 @@ impl SimWeapon {
             type_: wep.clone(),
             targets: SimWeapon::get_target_type(wep),
             upgrade_damage: wep.damage_bonus() * player.get_upgrade_level(wep.upgrade_type()),
-            range_min: wep.min_range(),
-            range_max: wep.max_range(), // TODO range upgrades
+            range_min: wep.min_range() as f64,
+            range_max: wep.max_range() as f64, // TODO range upgrades
             cooldown: wep.damage_cooldown(),
         }
     }
@@ -50,8 +51,8 @@ impl SimWeapon {
             type_: wep,
             targets: SimWeapon::get_target_type(&wep),
             upgrade_damage,
-            range_min: wep.min_range(),
-            range_max: wep.max_range(),
+            range_min: wep.min_range() as f64,
+            range_max: wep.max_range() as f64,
             cooldown: wep.damage_cooldown(),
         }
     }
@@ -62,10 +63,11 @@ pub(crate) struct SimUnit {
     id: UnitId,
     player: PlayerId,
     type_: UnitType,
-    last_attack_frame: u32,
+    last_attack_frame: i32,
     position: ScaledPosition<1>,
     size: ScaledPosition<1>,
     facing: f64, // in radians, 0.0 is east
+    // TODO: velocity
     weapons: Vec<SimWeapon>,
     armor: i32,
     shield_armor: i32,
@@ -115,7 +117,7 @@ impl SimUnit {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Order {
     Guard,
     Attack(UnitId),
@@ -125,7 +127,7 @@ enum Order {
     Repair(UnitId),
     Hold,
     Stop,
-    Patrol(ScaledPosition<1>),
+    Patrol(ScaledPosition<1>, ScaledPosition<1>),
     GroundAbility(TechType, ScaledPosition<1>),
     TargettedAbility(TechType, UnitId),
 }

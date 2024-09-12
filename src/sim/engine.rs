@@ -1,22 +1,23 @@
-use super::{volleys::Damage, Order, SimOrder, SimUnit};
+use super::{orders::OrderProcessor, volleys::Damage, Order, SimOrder, SimUnit};
 use rsbwapi::{DamageType, Race, ScaledPosition, TilePosition, UnitId};
 use std::collections::{HashMap, HashSet};
 
 const ZERG_HP_REGEN: f32 = 4.0 / 256.0;
 const TOSS_SHIELD_REGEN: f32 = 7.0 / 256.0;
 const TERRAN_BURN: f32 = 20.0 / 256.0;
+const ENV: UnitId = UnitId::MAX;
 
 #[derive(Debug, PartialEq)]
-enum Effect {
+pub(super) enum Effect {
     Idle(UnitId),
-    Damaged(UnitId, Damage),
+    Damaged(UnitId, Damage, UnitId),
     Healed(UnitId, Damage),
     Moved(UnitId, ScaledPosition<1>, f64),
     Died(UnitId),
 }
 
 /// Unit combat simulator
-struct Engagement {
+pub(super) struct Engagement {
     top_left: TilePosition,
     size: TilePosition,
     frame: i32,
@@ -63,6 +64,14 @@ impl Engagement {
         summary
     }
 
+    pub fn get_frame(&self) -> i32 {
+        self.frame
+    }
+
+    pub fn all_units(&self) -> impl Iterator<Item = &SimUnit> {
+        self.units.values()
+    }
+
     fn process_orders(&self) -> Vec<Effect> {
         self.units
             .iter()
@@ -74,8 +83,25 @@ impl Engagement {
     }
 
     fn process_order(&self, unit: &SimUnit, order: Option<&SimOrder>) -> Effect {
-        // TODO: turn orders into effects
-        Effect::Idle(unit.id)
+        let processor = OrderProcessor::new(self, unit);
+        let order_type = order.map(|o| o.order).unwrap_or(Order::Guard);
+        match order_type {
+            Order::Attack(target_id) => processor.attack_unit(self.units.get(&target_id)),
+            Order::AttackMove(dest) => processor.attack_move(dest),
+            Order::Follow(target_id) => processor.move_towards_unit(self.units.get(&target_id)),
+            Order::Move(dest) => processor.move_towards(dest),
+            Order::Patrol(from, to) => processor.attack_move(to), // TODO
+            Order::Guard => processor.guard(),
+            Order::Hold => processor.hold_position(),
+            _ => Effect::Idle(unit.id),
+        }
+    }
+
+    fn capped_heal(hp: &mut f32, heal: f32, max: i32) {
+        *hp += heal;
+        if *hp > max as f32 {
+            *hp = max as f32;
+        }
     }
 
     fn apply_effects(&mut self, effects: Vec<Effect>) -> FrameSummary {
@@ -84,23 +110,35 @@ impl Engagement {
             match e {
                 Effect::Healed(id, ref heal) => {
                     if let Some(unit) = self.units.get_mut(&id) {
-                        unit.hp += heal.hp;
-                        unit.shields += heal.shield;
+                        Engagement::capped_heal(&mut unit.hp, heal.hp, unit.type_.max_hit_points());
+                        Engagement::capped_heal(
+                            &mut unit.shields,
+                            heal.shield,
+                            unit.type_.max_shields(),
+                        );
                     }
                 }
-                Effect::Damaged(id, ref damage) => {
-                    if let Some(unit) = self.units.get_mut(&id) {
-                        unit.hp -= damage.hp;
-                        unit.shields -= damage.shield;
+                Effect::Damaged(attacker, ref damage, target) => {
+                    if let Some(target) = self.units.get_mut(&target) {
+                        target.hp -= damage.hp;
+                        target.shields -= damage.shield;
                     }
-                    summary.add(id, e);
+                    if let Some(attacker) = self.units.get_mut(&attacker) {
+                        attacker.last_attack_frame = self.frame;
+                    }
+                    summary.add(target, e);
                 }
                 Effect::Died(id) => {
                     self.deadpool.insert(id);
                     self.units.remove(&id);
                     summary.add(id, e);
                 }
-                Effect::Moved(id, new_pos, new_facing) => {}
+                Effect::Moved(id, new_pos, new_facing) => {
+                    if let Some(unit) = self.units.get_mut(&id) {
+                        unit.position = new_pos;
+                        unit.facing = new_facing;
+                    }
+                }
                 Effect::Idle(id) => {}
             }
         }
@@ -127,7 +165,7 @@ impl Engagement {
             .filter_map(|unit| {
                 let starts_burning = unit.type_.max_hit_points() as f32 / 3.0;
                 if unit.hp <= starts_burning {
-                    Some(Effect::Damaged(unit.id, Damage::hp(TERRAN_BURN)))
+                    Some(Effect::Damaged(ENV, Damage::hp(TERRAN_BURN), unit.id))
                 } else {
                     None
                 }
@@ -167,7 +205,7 @@ impl Engagement {
 }
 
 #[derive(Debug)]
-struct FrameSummary {
+pub struct FrameSummary {
     frame: i32,
     effects: HashMap<UnitId, Vec<Effect>>,
 }
@@ -186,8 +224,8 @@ impl FrameSummary {
     }
 
     fn extend(&mut self, summary: FrameSummary) {
-        for (id, effects) in summary.effects.into_iter() {
-            for e in effects.into_iter() {
+        for (id, effects) in summary.effects {
+            for e in effects {
                 self.add(id, e);
             }
         }
@@ -198,7 +236,7 @@ impl FrameSummary {
 mod test {
     use super::{Engagement, TOSS_SHIELD_REGEN, ZERG_HP_REGEN};
     use crate::sim::{
-        engine::{Effect, FrameSummary, TERRAN_BURN},
+        engine::{Effect, FrameSummary, ENV, TERRAN_BURN},
         volleys::Damage,
         SimUnit,
     };
@@ -218,7 +256,7 @@ mod test {
         let burning = e.burning();
         assert_eq!(burning.len(), 1, "only one building burned");
         // rax id == 2
-        assert_eq!(burning[0], Effect::Damaged(2, Damage::hp(TERRAN_BURN)));
+        assert_eq!(burning[0], Effect::Damaged(ENV, Damage::hp(TERRAN_BURN), 2));
 
         // let the building burn down
         let mut summary = FrameSummary::new(0);
@@ -250,6 +288,15 @@ mod test {
             shields[0],
             Effect::Healed(2, Damage::shield(TOSS_SHIELD_REGEN))
         );
+
+        for _ in 0..3_000 {
+            e.tick();
+            let pylon = e.units.get(&2).unwrap();
+            assert!(
+                pylon.shields <= pylon.type_.max_shields() as f32,
+                "shield overheal"
+            )
+        }
     }
 
     #[test]
@@ -265,5 +312,13 @@ mod test {
         let regen = e.hp_shield_regen();
         assert_eq!(regen.len(), 1, "zerg building regenerated");
         assert_eq!(regen[0], Effect::Healed(0, Damage::hp(ZERG_HP_REGEN)));
+        for _ in 0..3_000 {
+            e.tick();
+            let sunken = e.units.get(&0).unwrap();
+            assert!(
+                sunken.hp <= sunken.type_.max_hit_points() as f32,
+                "regen overheal"
+            )
+        }
     }
 }
