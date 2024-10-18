@@ -63,7 +63,7 @@ pub(crate) struct SimUnit {
     id: UnitId,
     player: PlayerId,
     type_: UnitType,
-    last_attack_frame: i32,
+    last_attack_frame: Option<i32>,
     position: ScaledPosition<1>,
     size: ScaledPosition<1>,
     facing: f64, // in radians, 0.0 is east
@@ -82,7 +82,7 @@ impl SimUnit {
             type_,
             id: unit.get_id(),
             player: unit.get_player().get_id(),
-            last_attack_frame: 0,
+            last_attack_frame: None,
             position: unit.get_position(),
             facing: unit.get_angle(),
             size: (type_.width(), type_.height()).into(),
@@ -105,6 +105,17 @@ impl SimUnit {
     }
 
     #[cfg(test)]
+    fn no_upgrade_weapons(type_: UnitType) -> Vec<SimWeapon> {
+        [type_.air_weapon(), type_.ground_weapon()]
+            .into_iter()
+            .filter_map(|wt| match wt {
+                WeaponType::None | WeaponType::Unknown => None,
+                _ => Some(SimWeapon::simple(wt, 0)),
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
     fn simple(type_: UnitType, shield_armor: i32, armor: i32, hp: f32, shields: f32) -> Self {
         SimUnit {
             type_,
@@ -112,6 +123,18 @@ impl SimUnit {
             armor,
             hp,
             shields,
+            weapons: SimUnit::no_upgrade_weapons(type_),
+            ..Default::default()
+        }
+    }
+
+    #[cfg(test)]
+    fn full_hp(type_: UnitType) -> Self {
+        SimUnit {
+            type_,
+            hp: type_.max_hit_points() as f32,
+            shields: type_.max_shields() as f32,
+            weapons: SimUnit::no_upgrade_weapons(type_),
             ..Default::default()
         }
     }

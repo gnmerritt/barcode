@@ -46,8 +46,10 @@ impl<'a> OrderProcessor<'a> {
                 let dist = self.unit.position.distance(target.position);
                 let range_ok = dist <= wep.range_max && dist >= wep.range_min;
                 if range_ok {
-                    let cooldown_ok =
-                        self.unit.last_attack_frame + wep.cooldown >= self.engagement.get_frame();
+                    let cooldown_ok = match self.unit.last_attack_frame {
+                        Some(attack) => attack + wep.cooldown <= self.engagement.get_frame(),
+                        None => true,
+                    };
                     if cooldown_ok {
                         let damage = damage_per_hit(wep, target);
                         return Effect::Damaged(self.unit.id, damage, target.id);

@@ -64,12 +64,30 @@ impl Engagement {
         summary
     }
 
+    #[cfg(test)]
+    pub fn tick_many(&mut self, frames: i32) {
+        for _ in 0..frames {
+            let summary = self.tick();
+            println!("frame {} :: {:?}", summary.frame, summary);
+        }
+    }
+
     pub fn get_frame(&self) -> i32 {
         self.frame
     }
 
     pub fn all_units(&self) -> impl Iterator<Item = &SimUnit> {
         self.units.values()
+    }
+
+    pub fn order(&mut self, unit: UnitId, order: Order) -> bool {
+        if self.units.contains_key(&unit) {
+            self.orders
+                .insert(unit, SimOrder::new(unit, order, self.get_frame()));
+            true
+        } else {
+            false
+        }
     }
 
     fn process_orders(&self) -> Vec<Effect> {
@@ -124,7 +142,7 @@ impl Engagement {
                         target.shields -= damage.shield;
                     }
                     if let Some(attacker) = self.units.get_mut(&attacker) {
-                        attacker.last_attack_frame = self.frame;
+                        attacker.last_attack_frame = Some(self.frame.clone());
                     }
                     summary.add(target, e);
                 }
@@ -149,7 +167,7 @@ impl Engagement {
         self.units
             .values()
             .filter_map(|unit| {
-                if unit.hp < 0.0 {
+                if unit.hp <= 0.0 {
                     Some(Effect::Died(unit.id))
                 } else {
                     None
@@ -238,7 +256,7 @@ mod test {
     use crate::sim::{
         engine::{Effect, FrameSummary, ENV, TERRAN_BURN},
         volleys::Damage,
-        SimUnit,
+        Order, SimOrder, SimUnit,
     };
     use rsbwapi::UnitType;
 
@@ -319,6 +337,54 @@ mod test {
                 sunken.hp <= sunken.type_.max_hit_points() as f32,
                 "regen overheal"
             )
+        }
+    }
+
+    #[test]
+    fn test_move() {
+        let mut ling = SimUnit::full_hp(UnitType::Zerg_Zergling);
+        ling.position = (5, 5).into();
+        let ling_id = ling.id;
+        let mut e = Engagement::simple(vec![ling]);
+
+        e.order(ling_id, Order::Move((0, 0).into()));
+        e.tick_many(5);
+
+        let ling = e.all_units().next().expect("no ling");
+        assert_eq!(ling.position, (0, 0).into(), "ling didnt move");
+    }
+
+    #[test]
+    fn test_fight() {
+        let mut ling = SimUnit::full_hp(UnitType::Zerg_Zergling);
+        ling.position = (0, 0).into();
+        let ling_id = ling.id;
+
+        // TODO: make it harder to make units with colliding ids
+        let mut marine = SimUnit::full_hp(UnitType::Terran_Marine);
+        marine.id = 2;
+        marine.position = (10, 10).into();
+        marine.player = 2;
+        let marine_id = marine.id;
+
+        let mut e = Engagement::simple(vec![ling, marine]);
+        assert!(
+            e.order(ling_id, Order::Attack(marine_id)),
+            "ling attack order failed"
+        );
+        assert!(
+            e.order(marine_id, Order::Attack(ling_id)),
+            "marine attack order failed"
+        );
+        e.tick_many(60);
+
+        for u in e.all_units() {
+            println!("{:?}", u);
+            assert!(
+                u.hp < u.type_.max_hit_points() as f32,
+                "{:?} max hp",
+                u.type_
+            );
         }
     }
 }
